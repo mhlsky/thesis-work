@@ -13,6 +13,10 @@ from __future__ import annotations
 - 输入列和目标列分开统计；
 - 嵌套列表、序列窗口和 torch.Tensor 的统一接口；
 - 项目自己的 `scaler.json` 保存 / 加载格式。
+
+如果把本模块一句话讲清楚：
+它负责把“原始物理量”转换成“更适合模型学习的数值空间”，
+并在需要时再转换回来。
 """
 
 import csv
@@ -50,6 +54,14 @@ class StandardScaler:
         y_mean: Sequence[float] | None = None,
         y_std: Sequence[float] | None = None,
     ) -> None:
+        """创建项目标准化器对象。
+
+        一开始这些统计量可以是空的；
+        真正的均值和标准差通常在 `fit_csv_files()` 之后才会得到。
+
+        如果传入了 x_mean / x_std / y_mean / y_std，
+        则表示这是一个“从已保存参数恢复出来”的 scaler。
+        """
         self.input_cols = list(input_cols or [])
         self.target_cols = list(target_cols or [])
         self.x_mean = list(x_mean or [])
@@ -118,7 +130,11 @@ class StandardScaler:
         return _apply_last_dim(array, self.x_mean, self.x_std, inverse=False, scaler=self._x_scaler)
 
     def transform_y(self, array: Any) -> Any:
-        """标准化目标 y，规则与 transform_x 相同，但使用 y 的统计量。"""
+        """标准化目标 y，规则与 transform_x 相同，但使用 y 的统计量。
+
+        之所以单独做一个方法，而不是复用 transform_x，
+        是因为 y 的均值和标准差通常与 x 不同。
+        """
         self._check_fitted()
         return _apply_last_dim(array, self.y_mean, self.y_std, inverse=False, scaler=self._y_scaler)
 
@@ -175,7 +191,12 @@ class StandardScaler:
 
     @classmethod
     def load(cls, path: str | Path) -> "StandardScaler":
-        """从 JSON 文件恢复一个已经拟合好的 scaler。"""
+        """从 JSON 文件恢复一个已经拟合好的 scaler。
+
+        这常用于：
+        - 训练后保存 scaler；
+        - 推理或评估时再次加载同一套标准化参数。
+        """
         data = load_json(path)
         return cls(
             input_cols=data["input_cols"],
@@ -204,7 +225,11 @@ def _validate_columns(
     required_cols: Sequence[str],
     file: str | Path,
 ) -> None:
-    """检查 CSV 表头是否满足要求。"""
+    """检查 CSV 表头是否满足要求。
+
+    这里提前失败比后面静默出错更好，
+    否则你可能训练了很久才发现列对不上。
+    """
     if fieldnames is None:
         raise ValueError(f"CSV has no header: {file}")
     missing = [col for col in required_cols if col not in fieldnames]
@@ -218,7 +243,11 @@ def _read_float_values(
     file: str | Path,
     row_idx: int,
 ) -> list[float]:
-    """从一行 CSV 中读取指定列，并转成 float。"""
+    """从一行 CSV 中读取指定列，并转成 float。
+
+    如果某一列不是合法数字，会抛出带文件名、行号、列名的报错，
+    方便你定位脏数据。
+    """
     values: list[float] = []
     for col in cols:
         raw = row.get(col, "")
@@ -266,14 +295,24 @@ def _apply_last_dim(
 
 
 def _is_vector(value: Any) -> bool:
-    """判断一个对象是否可以视为“一维特征向量”。"""
+    """判断一个对象是否可以视为“一维特征向量”。
+
+    例如：
+    - [1.0, 2.0, 3.0] 是向量；
+    - [[1.0, 2.0], [3.0, 4.0]] 不是向量，而是二维结构。
+    """
     return isinstance(value, Sequence) and not isinstance(value, (str, bytes)) and (
         not value or not isinstance(value[0], Sequence)
     )
 
 
 def _try_import_torch() -> Any:
-    """尝试导入 PyTorch；未安装则返回 None。"""
+    """尝试导入 PyTorch；未安装则返回 None。
+
+    这样做可以让同一套标准化逻辑同时兼容：
+    - 纯 Python / numpy 数据流程；
+    - 依赖 torch.Tensor 的训练与推理流程。
+    """
     try:
         import torch
 
@@ -310,7 +349,14 @@ def _apply_sklearn_rows(
     scaler: SklearnStandardScaler | None,
     inverse: bool,
 ) -> list[list[float]]:
-    """把二维行向量送进 sklearn 做变换。"""
+    """把二维行向量送进 sklearn 做变换。
+
+    sklearn 的 `transform()` / `inverse_transform()` 都假设输入是二维矩阵：
+    - 行表示样本数 N
+    - 列表示特征数 C
+
+    所以哪怕你只有一个向量，也要先包装成 `[[...]]` 再送进去。
+    """
     if scaler is None:
         raise RuntimeError("StandardScaler is not fitted.")
 

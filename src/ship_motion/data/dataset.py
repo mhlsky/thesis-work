@@ -8,6 +8,11 @@ from __future__ import annotations
 
 如果你把模型训练理解成“喂很多训练样本”，
 那么本文件就是负责“生产样本”的地方。
+
+建议把本模块想成三层：
+1. 最外层 `build_datasets`：根据配置搭建 train / val / test 数据集；
+2. 中间层 `ShipWindowDataset`：把单条长时间序列切成很多滑动窗口样本；
+3. 底层辅助函数：负责读 CSV、解析路径、抽取列、把列表转成张量等杂务。
 """
 
 import argparse
@@ -37,19 +42,24 @@ class ArrayTensor:
     """
 
     def __init__(self, data: Any) -> None:
+        """保存原始嵌套数据，并提前推断 shape。"""
         self.data = data
         self.shape = _shape_of_nested(data)
 
     def __getitem__(self, item: Any) -> Any:
+        """支持像列表或张量一样按下标取值。"""
         return self.data[item]
 
     def __len__(self) -> int:
+        """返回第一维长度，行为尽量贴近常见张量对象。"""
         return len(self.data)
 
     def __repr__(self) -> str:
+        """打印时优先展示 shape，便于调试。"""
         return f"ArrayTensor(shape={self.shape})"
 
     def tolist(self) -> Any:
+        """与 torch.Tensor.tolist() 保持类似接口。"""
         return self.data
 
 
@@ -82,6 +92,20 @@ class ShipWindowDataset:
         stride: int = 1,
         max_windows_per_file: int | None = None,
     ) -> None:
+        """初始化一个“滑动窗口数据集”。
+
+        参数可以先这样理解：
+        - files: 数据来源，每个文件通常是一条或一批时间序列；
+        - scaler: 已经用训练集拟合好的标准化器；
+        - input_cols: 模型输入需要哪些列；
+        - target_cols: 模型监督目标需要哪些列；
+        - exog_cols: 输入里的外生变量列；
+        - state_cols: 输入里的状态变量列；
+        - seq_len: 每个样本向后看多少步历史；
+        - pred_len: 每个样本向前预测多少步未来；
+        - stride: 滑动窗口每次前进多少步；
+        - max_windows_per_file: 每个文件最多切多少个窗口，常用于 smoke test。
+        """
         if seq_len <= 0:
             raise ValueError("seq_len must be positive.")
         if pred_len <= 0:
@@ -182,6 +206,12 @@ def build_datasets(config: dict[str, Any], smoke: bool = False) -> dict[str, Any
     - 原始文件列表；
     - 训练集统计得到的 scaler；
     - 各个划分对应的数据集对象。
+
+    这个函数通常是“数据模块总入口”：
+    - 先读取并修正配置里的路径；
+    - 再收集 train / val / test 各自对应的 CSV 文件；
+    - 接着只用训练集拟合标准化器；
+    - 最后为每个数据划分创建一个 ShipWindowDataset。
     """
     cfg = deepcopy(config)
     config_path = cfg.get("__config_path__")
@@ -242,6 +272,9 @@ def run_smoke_test(config_path: str | Path = DEFAULT_CONFIG_PATH) -> None:
     - CSV 能否正常解析；
     - 数据窗口能否正确切分；
     - 标准化器能否正常保存。
+
+    你可以把 smoke test 理解成“点火试车”：
+    不追求完整训练，只确认数据管线能不能跑起来。
     """
     config = load_yaml(config_path)
     bundle = build_datasets(config, smoke=True)
@@ -276,6 +309,9 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     用法示例：
     - python -m ship_motion.data.dataset --config configs/base.yaml --smoke
+
+    这个入口主要是为了命令行快速验证数据流程，
+    不是完整训练脚本。
     """
     parser = argparse.ArgumentParser(description="Ship motion data pipeline smoke test.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
@@ -318,7 +354,12 @@ def _resolve_data_config_paths(
 
 
 def _resolve_config_path(path_value: str | Path, config_dir: Path, repo_root: Path) -> Path:
-    """解析配置路径，避免依赖进程当前工作目录。"""
+    """解析配置路径，避免依赖进程当前工作目录。
+
+    为什么要单独做这一步：
+    - 如果直接写相对路径，程序从不同目录启动时可能找不到文件；
+    - 这里统一把路径变成绝对路径，后续逻辑就更稳定。
+    """
     path = Path(path_value)
     if path.is_absolute():
         return path
@@ -356,7 +397,12 @@ def _read_csv_arrays(
 
 
 def _limited_files(data_dir: str | Path, max_files: int | None) -> list[Path]:
-    """读取目录中的 CSV 文件，并按需要截断数量。"""
+    """读取目录中的 CSV 文件，并按需要截断数量。
+
+    这个函数常用于两种场景：
+    - 正常训练时读取目录下全部 CSV；
+    - smoke test 时只取前几个文件，加快验证速度。
+    """
     files = list_csv_files(data_dir)
     if max_files is not None:
         files = files[: int(max_files)]
@@ -366,7 +412,15 @@ def _limited_files(data_dir: str | Path, max_files: int | None) -> list[Path]:
 
 
 def _column_indices(all_cols: Sequence[str], selected_cols: Sequence[str]) -> list[int]:
-    """把列名列表转换成列下标列表。"""
+    """把列名列表转换成列下标列表。
+
+    例如：
+    - all_cols = [a, b, c, d]
+    - selected_cols = [b, d]
+    - 返回 [1, 3]
+
+    这样后面就能更快地按位置切列，而不是反复按列名查找。
+    """
     missing = [col for col in selected_cols if col not in all_cols]
     if missing:
         raise ValueError(f"Columns are not in input_cols: {missing}")
@@ -374,12 +428,21 @@ def _column_indices(all_cols: Sequence[str], selected_cols: Sequence[str]) -> li
 
 
 def _take_columns(rows: Sequence[Sequence[float]], indices: Sequence[int]) -> list[list[float]]:
-    """从二维数组中按下标抽取指定列。"""
+    """从二维数组中按下标抽取指定列。
+
+    输入通常形如 [time, feature]，
+    输出仍是二维数组，只是保留了部分特征列。
+    """
     return [[row[idx] for idx in indices] for row in rows]
 
 
 def _to_tensor(data: Any) -> Any:
-    """优先转成 torch.Tensor；如果没装 torch，则退化为 ArrayTensor。"""
+    """优先转成 torch.Tensor；如果没装 torch，则退化为 ArrayTensor。
+
+    这样写的好处是：
+    - 装了 PyTorch 时，训练代码可以直接吃张量；
+    - 没装 PyTorch 时，最基础的数据流程和 smoke test 仍然能跑。
+    """
     torch = _try_import_torch()
     if torch is not None:
         return torch.tensor(data, dtype=torch.float32)
@@ -387,7 +450,10 @@ def _to_tensor(data: Any) -> Any:
 
 
 def _shape(value: Any) -> Any:
-    """统一获取对象形状，兼容 Tensor 和普通嵌套列表。"""
+    """统一获取对象形状，兼容 Tensor 和普通嵌套列表。
+
+    这是一个小工具函数，主要为了打印调试信息时更统一。
+    """
     if hasattr(value, "shape"):
         return value.shape
     return _shape_of_nested(value)
@@ -423,7 +489,10 @@ def _simple_batch(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _as_list(value: Any) -> Any:
-    """把 Tensor / ArrayTensor / 原生列表统一转成可嵌套的列表结构。"""
+    """把 Tensor / ArrayTensor / 原生列表统一转成可嵌套的列表结构。
+
+    这样 `_simple_batch` 就不用关心输入到底来自 torch 还是纯 Python。
+    """
     if hasattr(value, "tolist"):
         return value.tolist()
     return value
@@ -460,7 +529,13 @@ def _read_float_values(
 
 
 def _try_import_torch() -> Any:
-    """尝试导入 PyTorch，没装就返回 None。"""
+    """尝试导入 PyTorch，没装就返回 None。
+
+    这是一个“软依赖”设计：
+    - 有 torch 时走真实张量逻辑；
+    - 没 torch 时走降级逻辑；
+    - 这样数据模块不会因为缺少深度学习框架而完全不可用。
+    """
     try:
         import torch
 

@@ -27,6 +27,7 @@
 - Use `uv` for environment and command execution when possible.
 - Prefer PowerShell-compatible commands and scripts for examples and automation.
 - Before introducing a new dependency, confirm it is necessary and add it to `pyproject.toml`.
+- Lightweight fallback logic is acceptable for smoke tests or early validation, but when work moves into formal implementation, training, evaluation, or integration, switch back to the proper runtime environment and official libraries when feasible.
 - Prefer repository-documented commands first:
   - `uv sync`
   - `uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke`
@@ -36,8 +37,14 @@
 
 - Follow the existing code style and keep changes minimal unless a broader refactor is necessary.
 - Avoid moving files or restructuring modules without a clear need.
+- When adding or substantially rewriting code, prefer beginner-friendly comments and docstrings that explain the purpose of the code, the role of key variables, and non-obvious control flow.
 - Add brief comments only where the code would otherwise be hard to follow.
 - Keep scripts, configs, and package code consistent with each other when changing experiment workflow.
+
+## Configuration
+
+- Add field-level explanations for important configuration files when creating or updating them, so a beginner can understand what each key controls.
+- Prefer keeping configuration self-explanatory with short inline comments or nearby documentation when the file format allows it.
 
 ## Verification
 

@@ -1,21 +1,69 @@
+# 本文件是项目的数据与训练基础配置。
+# 可以先把它理解成“实验参数总开关”：
+# - data: 数据来自哪里、每个样本怎么切
+# - train: 训练过程的一些基础参数
+# - output_dir: 结果默认输出到哪里
+
 data:
+  # 训练集目录。标准化器的均值/标准差只会使用这里的 CSV 来统计。
   train_dir: data/patrol_ship_routine/processed/train
+
+  # 验证集目录。用于调参或中途评估，不参与标准化参数拟合。
   val_dir: data/patrol_ship_routine/processed/validation
+
+  # 常规测试集目录。通常用于评估模型在“同分布”数据上的表现。
   routine_test_dir: data/patrol_ship_routine/processed/test
+
+  # OOD(out-of-distribution) 测试集目录。
+  # 一般表示分布偏离训练集的数据，用于测试模型泛化能力。
   ood_test_dir: data/patrol_ship_ood/processed/test
+
+  # 外生变量列。
+  # 可粗略理解为“影响系统但不一定是系统当前状态本身的输入量/环境量/控制量”。
   exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+
+  # 状态变量列。
+  # 这些通常是模型最终要预测的船舶运动状态。
   state_cols: [u, v, p, r, phi]
+
+  # 输入特征列。每个历史时间步会把这些字段一起送给模型。
   input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+
+  # 目标列。模型需要预测未来若干步的这些字段。
   target_cols: [u, v, p, r, phi]
+
+  # 历史窗口长度。
+  # 例如 128 表示：每个样本都要取过去 128 个时间步作为输入。
   seq_len: 128
+
+  # 预测窗口长度。
+  # 例如 10 表示：模型要预测未来连续 10 个时间步。
   pred_len: 10
+
+  # 滑动步长。
+  # 1 表示窗口每次向前滑 1 个时间步；值越大，样本重叠越少。
   stride: 1
+
+  # 最多读取多少个文件。
+  # null 表示不限制；smoke test 时程序可能会临时改小这个值。
   max_files: null
+
+  # 每个文件最多切多少个窗口样本。
+  # null 表示不限制；用于加速调试和冒烟测试很有用。
   max_windows_per_file: null
 
 train:
+  # 随机种子。用于尽量复现实验结果。
   seed: 42
+
+  # 每个 batch 含多少个样本。
+  # 当前数据模块还没有真正用到训练循环，但这个字段通常会被训练脚本使用。
   batch_size: 128
+
+  # DataLoader 等并行读取数据时的工作进程数。
+  # 0 往往表示不额外开子进程，调试时更简单。
   num_workers: 0
 
+# 输出目录。
+# 例如 smoke test 保存的 scaler.json 会默认落在这个目录下。
 output_dir: outputs
