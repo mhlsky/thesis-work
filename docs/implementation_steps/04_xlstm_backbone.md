@@ -244,6 +244,7 @@ model:
 ## 9. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/04_xlstm_backbone.md 实现 Lite-xLSTM 和 CCG-xLSTM。Lite-xLSTM 使用指数门控和归一化记忆更新；CCG-xLSTM 需要让 exog_cols 经过 MLP 后参与门控。暂时不要接 VMD、注意力和物理约束。模型输出必须是 [B, pred_len, 5]。
+请根据 docs/implementation_steps/04_xlstm_backbone.md 实现 Lite-xLSTM 和 CCG-xLSTM。Lite-xLSTM 使用指数门控和归一化记忆更新；CCG-xLSTM 需要让 exog_cols 经过 MLP 后参与门控。暂时不要接 VMD、注意力和物理约束。模型输出必须是 [B, pred_len, 5]。
 ```
+
 

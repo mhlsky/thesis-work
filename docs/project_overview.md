@@ -375,9 +375,9 @@ CCG-xLSTM hidden sequence -> Linear Self-Attention -> VMD Multi-Head
 
 ```text
 thesis-work/
-  project_overview.md
-  learn.md
-  implementation_steps/
+  README.md
+  pyproject.toml
+  uv.lock
   configs/
     base.yaml
     lstm.yaml
@@ -389,31 +389,37 @@ thesis-work/
     vmd_ccg_xlstm.yaml
     vmd_ccg_phys_xlstm.yaml
     vmd_ccg_attn_phys_xlstm.yaml      # 可选增强
-  ship_motion/
-    data/
-      dataset.py
-      scaler.py
-      vmd.py
-    models/
-      persistence.py
-      lstm.py
-      gru.py
-      transformer.py
-      tcn.py                          # 可选
-      xlstm.py                        # LiteXLSTM + CCGXLSTM
-      vmd_heads.py
-      decoders.py                     # DeltaDecoder
-      state_mixer.py
-      linear_attention.py             # 可选增强
-    losses/
-      vmd_loss.py
-      physics.py
-    train.py
-    evaluate.py
-    metrics.py
-    plot_results.py
-    summarize_results.py
-    utils.py
+  docs/
+    project_overview.md
+    learn.md
+    implementation_steps/
+    references/
+  src/
+    ship_motion/
+      data/
+        dataset.py
+        scaler.py
+        vmd.py
+      models/
+        persistence.py
+        lstm.py
+        gru.py
+        transformer.py
+        tcn.py                          # 可选
+        xlstm.py                        # LiteXLSTM + CCGXLSTM
+        vmd_heads.py
+        decoders.py                     # DeltaDecoder
+        state_mixer.py
+        linear_attention.py             # 可选增强
+      losses/
+        vmd_loss.py
+        physics.py
+      train.py
+      evaluate.py
+      metrics.py
+      plot_results.py
+      summarize_results.py
+      utils.py
   scripts/
     smoke_test.ps1
     build_vmd_cache.ps1
@@ -434,6 +440,8 @@ thesis-work/
 7. `07_experiments.md`：主线消融实验、汇总表格、绘图；
 8. `08_optional_attention.md`：线性注意力可选增强。
 
+这些步骤文档统一位于 `docs/implementation_steps/`。
+
 ---
 
 ## 13. EI 论文最低完成标准
@@ -449,3 +457,4 @@ thesis-work/
 7. 物理一致性指标：roll consistency error 或 smoothness；
 8. 对 OOD 泛化结果进行分析；
 9. 如时间允许，补充线性注意力增强实验。
+

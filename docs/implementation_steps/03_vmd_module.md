@@ -168,7 +168,7 @@ y_modes = modes[start+seq_len : start+seq_len+pred_len]
 
 ## 6. VMD 辅助损失
 
-文件：`ship_motion/losses/vmd_loss.py`
+文件：`src/ship_motion/losses/vmd_loss.py`
 
 ```python
 def vmd_aux_loss(mode_preds, y_modes):
@@ -218,6 +218,7 @@ y_hat = mode_preds.sum(dim=-1)
 ## 9. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/03_vmd_module.md 实现 VMD 分解模块。VMD 是必做模块，但本步骤只负责生成缓存和让 Dataset 返回 y_modes，不要实现 xLSTM 模型。VMD 结果只能作为辅助标签，不作为模型输入，避免未来信息泄漏。
+请根据 docs/implementation_steps/03_vmd_module.md 实现 VMD 分解模块。VMD 是必做模块，但本步骤只负责生成缓存和让 Dataset 返回 y_modes，不要实现 xLSTM 模型。VMD 结果只能作为辅助标签，不作为模型输入，避免未来信息泄漏。
 ```
+
 

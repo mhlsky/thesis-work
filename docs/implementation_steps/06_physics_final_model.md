@@ -84,7 +84,7 @@ phi_hat[:, 0] - phi_last ≈ p_last * dt
 
 ### 2.3 接口
 
-`ship_motion/losses/physics.py`：
+`src/ship_motion/losses/physics.py`：
 
 ```python
 def smoothness_loss(y_raw): pass
@@ -225,5 +225,6 @@ def roll_consistency_rmse(y_pred_raw, last_state_raw, dt=1.0): pass
 ## 8. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/06_physics_final_model.md，在已有 VMD-CCG-xLSTM 基础上加入物理约束损失，形成 VMD-CCG-Phys-xLSTM。不要实现线性注意力。物理损失必须在反标准化后的 raw 物理尺度上计算。
+请根据 docs/implementation_steps/06_physics_final_model.md，在已有 VMD-CCG-xLSTM 基础上加入物理约束损失，形成 VMD-CCG-Phys-xLSTM。不要实现线性注意力。物理损失必须在反标准化后的 raw 物理尺度上计算。
 ```
+

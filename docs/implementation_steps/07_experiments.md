@@ -224,5 +224,6 @@ python -m ship_motion.summarize_results --runs lstm_seq128_pred10,gru_seq128_pre
 ## 10. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/07_experiments.md 实现实验汇总和绘图脚本。不要新增模型。要求读取各 run 的 metrics JSON 和 predictions npz，生成 routine/OOD 消融表、物理指标表、预测曲线图和 RMSE 柱状图。线性注意力只作为可选增强，不纳入主线必跑项。
+请根据 docs/implementation_steps/07_experiments.md 实现实验汇总和绘图脚本。不要新增模型。要求读取各 run 的 metrics JSON 和 predictions npz，生成 routine/OOD 消融表、物理指标表、预测曲线图和 RMSE 柱状图。线性注意力只作为可选增强，不纳入主线必跑项。
 ```
+

@@ -72,7 +72,7 @@ y_hat: [B, pred_len, target_dim]
 
 ## 3. Persistence 基线
 
-文件：`ship_motion/models/persistence.py`
+文件：`src/ship_motion/models/persistence.py`
 
 思路：未来 10 秒都等于历史最后一秒的状态。
 
@@ -87,7 +87,7 @@ Persistence 不需要训练，但必须参与评估。它用于告诉我们：�
 
 ## 4. LSTM 基线
 
-文件：`ship_motion/models/lstm.py`
+文件：`src/ship_motion/models/lstm.py`
 
 结构：
 
@@ -119,7 +119,7 @@ dropout: 0.1
 
 ## 5. GRU 基线
 
-文件：`ship_motion/models/gru.py`
+文件：`src/ship_motion/models/gru.py`
 
 GRU 和 LSTM 类似，但结构更轻，参数更少。它适合作为轻量 RNN 对比。
 
@@ -147,7 +147,7 @@ class GRUForecaster(nn.Module):
 
 ## 6. TCN 基线
 
-文件：`ship_motion/models/tcn.py`
+文件：`src/ship_motion/models/tcn.py`
 
 TCN 是时间卷积网络。它不按时间步递归，而是用一维卷积看历史窗口。膨胀卷积可以扩大感受野，适合时序预测。
 
@@ -183,7 +183,7 @@ dropout: 0.1
 
 ## 7. Transformer Encoder 基线
 
-文件：`ship_motion/models/transformer.py`
+文件：`src/ship_motion/models/transformer.py`
 
 Transformer 用标准自注意力建模历史窗口，作为注意力基线。它可能精度不错，但计算复杂度更高。
 
@@ -220,7 +220,7 @@ dropout: 0.1
 
 ## 8. 指标设计
 
-文件：`ship_motion/metrics.py`
+文件：`src/ship_motion/metrics.py`
 
 必须实现：
 
@@ -251,7 +251,7 @@ def compute_metrics(y_pred_raw, y_true_raw, target_cols): pass
 
 ## 9. 训练框架
 
-文件：`ship_motion/train.py`
+文件：`src/ship_motion/train.py`
 
 需要实现：
 
@@ -371,5 +371,6 @@ python -m ship_motion.train --config configs/transformer.yaml
 ## 14. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/02_training_lstm.md 实现常规基线模型和训练评估框架。需要实现 Persistence、LSTM、GRU、TCN、Transformer Encoder、metrics、train.py 和 evaluate.py。不要实现 VMD、xLSTM、注意力和物理约束。指标必须在反标准化后的真实物理尺度上计算。
+请根据 docs/implementation_steps/02_training_lstm.md 实现常规基线模型和训练评估框架。需要实现 Persistence、LSTM、GRU、TCN、Transformer Encoder、metrics、train.py 和 evaluate.py。不要实现 VMD、xLSTM、注意力和物理约束。指标必须在反标准化后的真实物理尺度上计算。
 ```
+

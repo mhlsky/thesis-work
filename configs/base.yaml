@@ -1,0 +1,21 @@
+data:
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+  state_cols: [u, v, p, r, phi]
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+  target_cols: [u, v, p, r, phi]
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  seed: 42
+  batch_size: 128
+  num_workers: 0
+
+output_dir: outputs

@@ -83,7 +83,7 @@ mode_preds_delta_or_direct: [B, pred_len, target_dim, K]
 
 ### 3.2 接口
 
-`ship_motion/models/vmd_heads.py`：
+`src/ship_motion/models/vmd_heads.py`：
 
 ```python
 class VMDMultiHead(nn.Module):
@@ -119,7 +119,7 @@ model:
 
 ### 4.3 接口
 
-`ship_motion/models/decoders.py`：
+`src/ship_motion/models/decoders.py`：
 
 ```python
 class DeltaDecoder(nn.Module):
@@ -153,7 +153,7 @@ State Mixer 用一个很小的网络在每个预测步内部修正五个状态�
 
 ### 5.2 接口
 
-`ship_motion/models/state_mixer.py`：
+`src/ship_motion/models/state_mixer.py`：
 
 ```python
 class StateCouplingMixer(nn.Module):
@@ -298,6 +298,7 @@ train:
 ## 10. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/05_vmd_ccg_integration.md 实现 VMD-CCG-xLSTM 集成。需要新增 VMDMultiHead、DeltaDecoder 和 StateCouplingMixer。模型输出 mode_preds 和 y_hat，训练损失包含预测 MSE 和 VMD 辅助 MSE。暂时不要加入线性注意力和物理约束。
+请根据 docs/implementation_steps/05_vmd_ccg_integration.md 实现 VMD-CCG-xLSTM 集成。需要新增 VMDMultiHead、DeltaDecoder 和 StateCouplingMixer。模型输出 mode_preds 和 y_hat，训练损失包含预测 MSE 和 VMD 辅助 MSE。暂时不要加入线性注意力和物理约束。
 ```
+
 

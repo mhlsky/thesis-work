@@ -53,7 +53,7 @@ Input -> CCG-xLSTM hidden_seq -> LinearSelfAttention -> feature -> VMDMultiHead 
 
 ## 3. 接口设计
 
-`ship_motion/models/linear_attention.py`：
+`src/ship_motion/models/linear_attention.py`：
 
 ```python
 class LinearSelfAttention(nn.Module):
@@ -144,5 +144,6 @@ VMD-CCG-Attn-Phys-xLSTM
 ## 8. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/08_optional_attention.md，在已有 VMD-CCG-Phys-xLSTM 基础上加入可选 LinearSelfAttention。注意这是可选增强，必须通过 use_attention 开关控制。不要改变主线模型默认行为。
+请根据 docs/implementation_steps/08_optional_attention.md，在已有 VMD-CCG-Phys-xLSTM 基础上加入可选 LinearSelfAttention。注意这是可选增强，必须通过 use_attention 开关控制。不要改变主线模型默认行为。
 ```
+

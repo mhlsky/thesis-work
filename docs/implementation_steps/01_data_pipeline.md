@@ -31,13 +31,14 @@ state_cols = 船舶状态量：u, v, p, r, phi
 新增文件：
 
 ```text
-ship_motion/
-  __init__.py
-  data/
+src/
+  ship_motion/
     __init__.py
-    dataset.py
-    scaler.py
-  utils.py
+    data/
+      __init__.py
+      dataset.py
+      scaler.py
+    utils.py
 configs/
   base.yaml
 scripts/
@@ -83,7 +84,7 @@ max_windows_per_file: 50
 
 ## 3. StandardScaler 设计
 
-文件：`ship_motion/data/scaler.py`
+文件：`src/ship_motion/data/scaler.py`
 
 ### 3.1 为什么要标准化
 
@@ -127,7 +128,7 @@ class StandardScaler:
 
 ## 4. ShipWindowDataset 设计
 
-文件：`ship_motion/data/dataset.py`
+文件：`src/ship_motion/data/dataset.py`
 
 ### 4.1 样本切法
 
@@ -173,7 +174,7 @@ y 预测第 128~137 秒
 
 ## 5. 工具函数
 
-文件：`ship_motion/utils.py`
+文件：`src/ship_motion/utils.py`
 
 ```python
 def set_seed(seed: int): pass
@@ -231,6 +232,7 @@ scaler saved to outputs/smoke_test/scaler.json
 ## 8. 交给 AI 编码的提示词
 
 ```text
-请根据 implementation_steps/01_data_pipeline.md 实现数据管线。只实现 StandardScaler、ShipWindowDataset、utils 和 smoke test，不要写模型、训练、VMD。窗口不能跨 CSV 文件，scaler 只能在训练集上拟合。Dataset 需要返回 x、x_exog、x_state、y、y_raw、last_state_raw。
+请根据 docs/implementation_steps/01_data_pipeline.md 实现数据管线。只实现 StandardScaler、ShipWindowDataset、utils 和 smoke test，不要写模型、训练、VMD。窗口不能跨 CSV 文件，scaler 只能在训练集上拟合。Dataset 需要返回 x、x_exog、x_state、y、y_raw、last_state_raw。
 ```
+
 
