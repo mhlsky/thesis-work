@@ -282,7 +282,7 @@ loss = MSE(y_hat, y_true) + lambda_vmd * MSE(mode_preds, y_modes)
 
 ---
 
-## 8. 创新点三：线性注意力
+## 8. 可选增强：线性注意力
 
 ### 8.1 注意力解决什么问题？
 
@@ -453,8 +453,8 @@ OOD 更难，因为它和训练集分布不完全一样。模型如果在 OOD �
 | Lite-xLSTM | 验证 xLSTM 指数门控 |
 | CCG-xLSTM | 验证控制/风场条件门控 |
 | VMD-CCG-xLSTM | 验证 VMD |
-| VMD-CCG-Attn-xLSTM | 验证线性注意力 |
-| Final | 验证完整模型 |
+| VMD-CCG-Phys-xLSTM | 验证物理约束和最终主模型 |
+| VMD-CCG-Attn-Phys-xLSTM | 可选：验证线性注意力增强 |
 
 如果最终模型比前面逐步变好，就说明各个创新点是有贡献的。
 
@@ -510,8 +510,8 @@ roll_consistency_rmse
 5. CCG-xLSTM；
 6. VMD-CCG-xLSTM；
 7. Delta Decoder 和 State Mixer；
-8. 线性注意力；
-9. 物理约束；
+8. 物理约束；
+9. 线性注意力（可选增强）；
 10. 消融实验和绘图。
 
 每一步都要先跑 smoke test，再跑全量实验。
@@ -538,7 +538,7 @@ VMD 结果不要作为测试输入特征。主线只作为辅助标签。
 
 ### 16.5 一次开太多模块
 
-不要一开始同时打开 VMD、CCG、attention、delta、mixer、physics。应该逐步打开，方便定位问题。
+不要一开始同时打开 VMD、CCG、delta、mixer、physics。主线稳定后，如果还要做 attention，再单独打开，方便定位问题。
 
 ---
 
@@ -549,10 +549,12 @@ VMD 结果不要作为测试输入特征。主线只作为辅助标签。
 ```text
 1. CCG-xLSTM 负责根据船舶状态、控制量、风场量提取历史动态特征；
 2. VMD 多分支头负责把未来运动拆成不同模态去预测；
-3. 线性注意力负责从历史窗口里挑关键时刻；
-4. Delta Decoder 保证未来预测是连续累积出来的；
-5. State Mixer 负责修正多个状态量之间的耦合关系；
-6. 物理损失负责约束预测曲线不要违背基本运动规律。
+3. Delta Decoder 保证未来预测是连续累积出来的；
+4. State Mixer 负责修正多个状态量之间的耦合关系；
+5. 物理损失负责约束预测曲线不要违背基本运动规律；
+6. 线性注意力是最后可选增强，用于从历史窗口里挑关键时刻。
 ```
 
 这条路线的优点是：每个模块都能解释清楚，并且都和船舶运动预测场景相关。
+
+
