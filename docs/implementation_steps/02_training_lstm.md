@@ -46,8 +46,15 @@ configs/
   tcn.yaml
   transformer.yaml
 scripts/
+  smoke_step_02_training.ps1
   run_baselines.ps1
 ```
+
+Smoke test 要求：
+
+- `scripts/smoke_step_02_training.ps1` 必须能在本地低性能机器上快速验证“数据加载 -> 模型构建 -> 1-2 个 batch 训练/评估 -> 指标文件写入”的完整路径；
+- smoke 配置应使用极小 batch、极少 epoch/step，并将临时 checkpoint、metrics 写入 `outputs/smoke/`；
+- 本地 smoke test 只验证流程，不要求模型收敛；正式 baseline 训练后续放到算力平台运行。
 
 ---
 

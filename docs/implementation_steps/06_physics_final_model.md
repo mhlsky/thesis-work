@@ -28,6 +28,7 @@ VMD-CCG-Phys-xLSTM
 ```text
 ship_motion/losses/physics.py
 configs/vmd_ccg_phys_xlstm.yaml
+scripts/smoke_step_06_physics.ps1
 scripts/train_final_model.ps1
 ```
 
@@ -37,6 +38,12 @@ scripts/train_final_model.ps1
 ship_motion/train.py              # 支持 physics loss
 ship_motion/metrics.py            # 增加物理指标
 ```
+
+Smoke test 要求：
+
+- `scripts/smoke_step_06_physics.ps1` 必须验证最终主模型能在极小数据上完成前向、预测损失、VMD loss、平滑损失、横摇运动学损失和物理指标计算；
+- smoke test 必须覆盖反标准化后的物理损失/物理指标路径，避免只在标准化空间验证；
+- 本地 smoke test 不要求正式训练最终模型，完整训练后续放到算力平台运行。
 
 ---
 

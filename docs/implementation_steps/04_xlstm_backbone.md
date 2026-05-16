@@ -25,6 +25,7 @@
 ship_motion/models/xlstm.py
 configs/lite_xlstm.yaml
 configs/ccg_xlstm.yaml
+scripts/smoke_step_04_xlstm.ps1
 scripts/train_lite_xlstm.ps1
 scripts/train_ccg_xlstm.ps1
 ```
@@ -35,6 +36,12 @@ scripts/train_ccg_xlstm.ps1
 ship_motion/train.py      # build_model 支持 lite_xlstm 和 ccg_xlstm
 ship_motion/evaluate.py   # 支持加载两类模型
 ```
+
+Smoke test 要求：
+
+- `scripts/smoke_step_04_xlstm.ps1` 必须验证 Lite-xLSTM 和 CCG-xLSTM 至少能完成模型构建、一次前向、1-2 个 batch 的训练/评估；
+- smoke 配置应使用很小的 `d_model`、层数、batch 和 step 数，保证本地机器能快速跑完；
+- 本地 smoke test 只验证 xLSTM 主干流程，不要求训练到有效精度。
 
 ---
 

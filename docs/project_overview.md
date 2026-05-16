@@ -421,7 +421,7 @@ thesis-work/
       summarize_results.py
       utils.py
   scripts/
-    smoke_test.ps1
+    smoke_step_01_data.ps1
     build_vmd_cache.ps1
     run_baselines.ps1
     run_ablation.ps1
@@ -441,6 +441,8 @@ thesis-work/
 8. `08_optional_attention.md`：线性注意力可选增强。
 
 这些步骤文档统一位于 `docs/implementation_steps/`。
+
+每一步实现时必须同时提供一个轻量 smoke-test 脚本或等价命令，用于在本地低性能机器上验证该步骤的端到端流程。smoke test 只检查代码路径、配置读取、数据流、模型前向、最小训练/评估或结果汇总是否能跑通，不追求指标表现。正式训练、完整消融和最终评估默认放到租用算力平台执行。
 
 ---
 

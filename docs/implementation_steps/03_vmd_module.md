@@ -29,6 +29,7 @@ ship_motion/data/vmd.py
 ship_motion/losses/vmd_loss.py
 configs/vmd_ccg_xlstm.yaml     # 可先建配置骨架，模型下一步再用
 scripts/build_vmd_cache.ps1
+scripts/smoke_step_03_vmd.ps1
 ```
 
 修改文件：
@@ -36,6 +37,12 @@ scripts/build_vmd_cache.ps1
 ```text
 ship_motion/data/dataset.py   # 支持返回 y_modes
 ```
+
+Smoke test 要求：
+
+- `scripts/smoke_step_03_vmd.ps1` 必须只对极短序列或极少 CSV 片段构建 VMD 缓存，验证 VMD 分解、缓存读写、Dataset 返回 `y_modes` 的流程；
+- smoke 输出必须写入 `outputs/smoke/` 或 `outputs/cache/vmd_smoke/`，不要污染正式缓存；
+- 本地 smoke test 不要求处理全量数据，正式 VMD 缓存可后续在算力平台生成。
 
 ---
 

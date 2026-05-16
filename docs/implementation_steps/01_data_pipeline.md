@@ -42,7 +42,7 @@ src/
 configs/
   base.yaml
 scripts/
-  smoke_test.ps1
+  smoke_step_01_data.ps1
 ```
 
 ---
@@ -192,13 +192,19 @@ def save_json(obj, path): pass
 
 ## 6. Smoke Test
 
-`scripts/smoke_test.ps1` 运行：
+`scripts/smoke_step_01_data.ps1` 运行：
 
 ```powershell
 python -m ship_motion.data.dataset --config configs/base.yaml --smoke
 ```
 
 如果先不做 CLI，可以直接写一个 `run_smoke_test()` 函数。
+
+Smoke test 要求：
+
+- 只使用极少文件和窗口，例如 `max_files: 2`、`max_windows_per_file: 50`；
+- 只验证数据发现、滑窗、标准化、batch shape 和 scaler 保存；
+- 输出写入 `outputs/smoke/` 或 `outputs/smoke_test/`，不要污染正式实验目录。
 
 ### 预期输出
 

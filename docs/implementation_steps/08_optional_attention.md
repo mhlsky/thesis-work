@@ -27,6 +27,7 @@ VMD + CCG + Delta Decoder + State Mixer + Physics
 ```text
 ship_motion/models/linear_attention.py
 configs/vmd_ccg_attn_phys_xlstm.yaml
+scripts/smoke_step_08_attention.ps1
 scripts/train_attention_enhanced.ps1
 ```
 
@@ -36,6 +37,12 @@ scripts/train_attention_enhanced.ps1
 ship_motion/models/xlstm.py 或 VMD-CCG forecaster 相关文件
 ship_motion/train.py
 ```
+
+Smoke test 要求：
+
+- `scripts/smoke_step_08_attention.ps1` 必须验证线性注意力模块接入后，`hidden_seq -> attention -> VMD head -> decoder` 的路径能在极小数据上跑通；
+- smoke test 应比较开启/关闭 attention 的配置是否都能完成一次前向和最小训练/评估；
+- 该步骤是可选增强，本地 smoke 只用于判断集成是否正确，不要求证明精度提升。
 
 ---
 

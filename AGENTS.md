@@ -31,7 +31,7 @@
 - Prefer repository-documented commands first:
   - `uv sync`
   - `uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke`
-  - `pwsh -File .\\scripts\\smoke_test.ps1`
+  - `pwsh -File .\\scripts\\smoke_step_01_data.ps1`
 
 ## Code Changes
 
@@ -49,6 +49,9 @@
 ## Verification
 
 - For code changes, run the smallest relevant verification you can.
+- Every implementation step must provide a lightweight smoke-test script or command that can run on a low-performance local machine and validate the end-to-end workflow for that step.
+- Smoke tests are for workflow correctness only: use tiny data slices, minimal epochs/steps, small batch sizes, and write any generated files under `outputs/`.
+- Do not require local full training or full evaluation before moving code forward; full experiments are expected to run later on rented compute.
 - Prefer smoke tests or targeted module execution before proposing broader test runs.
 - If verification cannot be run, say so clearly and explain why.
 

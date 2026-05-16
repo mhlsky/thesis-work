@@ -33,6 +33,7 @@ ship_motion/models/vmd_heads.py
 ship_motion/models/decoders.py
 ship_motion/models/state_mixer.py
 configs/vmd_ccg_xlstm.yaml
+scripts/smoke_step_05_vmd_ccg.ps1
 scripts/train_vmd_ccg_xlstm.ps1
 ```
 
@@ -43,6 +44,12 @@ ship_motion/models/xlstm.py    # CCG backbone 支持 encode() 返回特征
 ship_motion/train.py           # 支持 vmd loss 和 dict output
 ship_motion/evaluate.py        # 支持 VMD 模型加载与评估
 ```
+
+Smoke test 要求：
+
+- `scripts/smoke_step_05_vmd_ccg.ps1` 必须验证 CCG backbone、VMD head、Delta Decoder、State Mixer、VMD auxiliary loss 能在极小数据上串通；
+- smoke 可复用 Step 03 的 smoke VMD 缓存，不应要求本地先构建全量 VMD 缓存；
+- 输出统一写入 `outputs/smoke/`，只检查张量形状、loss 计算、checkpoint/metrics 写入是否正常。
 
 ---
 

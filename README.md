@@ -19,7 +19,7 @@ thesis-work/
     references/
   outputs/
   scripts/
-    smoke_test.ps1
+    smoke_step_01_data.ps1
   src/
     ship_motion/
       data/
@@ -33,8 +33,15 @@ thesis-work/
 ```powershell
 uv sync
 uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke
-pwsh -File .\scripts\smoke_test.ps1
+pwsh -File .\scripts\smoke_step_01_data.ps1
 ```
+
+## 本地验证原则
+
+- 每个实现步骤都必须配套一个轻量 smoke-test 脚本或等价命令。
+- 本地 smoke test 只验证流程是否跑通，不要求完整训练效果。
+- smoke test 应使用极小样本、极少 epoch/step、小 batch，并把临时输出写入 `outputs/`。
+- 正式训练、消融和完整评估默认后续放到租用算力平台运行。
 
 ## 文档入口
 

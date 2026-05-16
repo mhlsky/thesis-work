@@ -18,6 +18,7 @@
 ship_motion/summarize_results.py
 ship_motion/plot_results.py
 configs/ablation_list.yaml
+scripts/smoke_step_07_experiments.ps1
 scripts/run_ablation.ps1
 scripts/evaluate_all.ps1
 scripts/plot_results.ps1
@@ -38,6 +39,12 @@ outputs/summary/
     rmse_bar.png
     roll_consistency_bar.png
 ```
+
+Smoke test 要求：
+
+- `scripts/smoke_step_07_experiments.ps1` 必须使用已有 smoke 输出或少量伪小结果，验证消融列表读取、结果汇总、表格生成和绘图流程；
+- 本地 smoke test 不要求重跑所有模型，只验证实验编排、汇总和绘图代码路径；
+- 正式消融训练、全量评估和论文图表默认后续在算力平台运行。
 
 ---
 
