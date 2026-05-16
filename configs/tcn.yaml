@@ -1,0 +1,48 @@
+# TCN 时间卷积网络基线配置。
+# 它通过因果卷积和膨胀卷积建模长时序依赖，不依赖循环结构。
+
+data:
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+  state_cols: [u, v, p, r, phi]
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+  target_cols: [u, v, p, r, phi]
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  seed: 42
+  batch_size: 128
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  early_stop_patience: 8
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+output_dir: outputs
+run_name: tcn_seq128_pred10
+
+model:
+  name: tcn
+  input_dim: 11
+  target_dim: 5
+
+  # channels 表示每一层 TemporalBlock 的卷积通道数。
+  # 最后一层输出通道也会作为预测头输入维度。
+  channels: [64, 128, 128]
+
+  # kernel_size 越大，单层卷积一次看到的局部时间范围越宽。
+  kernel_size: 3
+
+  # Dropout 用于卷积块和预测头中的轻量正则化。
+  dropout: 0.1

@@ -3,6 +3,10 @@
 # - data: 数据来自哪里、每个样本怎么切
 # - train: 训练过程的一些基础参数
 # - output_dir: 结果默认输出到哪里
+#
+# Step 02 开始，这里在保留 Step 01 原有说明的基础上，
+# 补充了训练 epoch、学习率、早停、设备等字段，
+# 方便后续所有 baseline 配置复用。
 
 data:
   # 训练集目录。标准化器的均值/标准差只会使用这里的 CSV 来统计。
@@ -57,13 +61,65 @@ train:
   seed: 42
 
   # 每个 batch 含多少个样本。
-  # 当前数据模块还没有真正用到训练循环，但这个字段通常会被训练脚本使用。
   batch_size: 128
+
+  # 训练多少个 epoch。
+  # 正式实验可以较大，smoke test 会自动覆盖成更小的值。
+  epochs: 50
+
+  # AdamW 学习率。
+  lr: 0.001
+
+  # AdamW 权重衰减。
+  # 可以把它理解成一种轻量正则化，帮助抑制过拟合。
+  weight_decay: 0.0001
+
+  # 梯度裁剪阈值。
+  # RNN 类模型出现梯度过大时，这个值可以帮助训练更稳定。
+  grad_clip: 1.0
+
+  # 早停耐心值。
+  # 如果验证集指标连续这么多轮没有提升，就提前结束训练。
+  early_stop_patience: 8
 
   # DataLoader 等并行读取数据时的工作进程数。
   # 0 往往表示不额外开子进程，调试时更简单。
   num_workers: 0
 
+  # 训练设备。
+  # auto 表示：有 CUDA 就用 CUDA，没有就自动回退到 CPU。
+  device: auto
+
+  # 每个 epoch 最多训练多少个 batch。
+  # null 表示不限制；本地 smoke test 时通常会被自动压小。
+  max_train_steps_per_epoch: null
+
+  # 每次验证/测试最多评估多少个 batch。
+  # null 表示不限制；本地 smoke test 时通常会被自动压小。
+  max_eval_steps: null
+
 # 输出目录。
-# 例如 smoke test 保存的 scaler.json 会默认落在这个目录下。
+# 例如 smoke test 保存的 scaler.json、checkpoint、metrics
+# 都会默认落在这个根目录下的某个 run 子目录里。
 output_dir: outputs
+
+# 当前实验运行名。
+# 正式训练时建议让每个模型配置单独覆盖这个名字，避免输出互相覆盖。
+run_name: base_experiment
+
+model:
+  # 模型名字。
+  # Step 02 可选：persistence / lstm / gru / tcn / transformer
+  name: lstm
+
+  # 输入维度。通常等于 input_cols 的列数。
+  input_dim: 11
+
+  # 目标维度。通常等于 target_cols 的列数。
+  target_dim: 5
+
+  # 下面这些字段主要给循环网络作为默认值。
+  # 不同模型配置文件会按需覆盖。
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.1

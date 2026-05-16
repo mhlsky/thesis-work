@@ -1,0 +1,42 @@
+# GRU 轻量循环网络基线配置。
+# 它和 LSTM 共享同一套数据与训练参数，只是循环单元更轻量。
+
+data:
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+  state_cols: [u, v, p, r, phi]
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+  target_cols: [u, v, p, r, phi]
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  seed: 42
+  batch_size: 128
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  early_stop_patience: 8
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+output_dir: outputs
+run_name: gru_seq128_pred10
+
+model:
+  # GRU 与 LSTM 配置字段保持一致，便于统一脚本批量运行。
+  name: gru
+  input_dim: 11
+  target_dim: 5
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.1

@@ -11,6 +11,11 @@ thesis-work/
   uv.lock
   configs/
     base.yaml
+    persistence.yaml
+    lstm.yaml
+    gru.yaml
+    tcn.yaml
+    transformer.yaml
   data/
   docs/
     project_overview.md
@@ -20,11 +25,22 @@ thesis-work/
   outputs/
   scripts/
     smoke_step_01_data.ps1
+    smoke_step_02_training.ps1
+    run_baselines.ps1
   src/
     ship_motion/
       data/
         dataset.py
         scaler.py
+      models/
+        persistence.py
+        lstm.py
+        gru.py
+        tcn.py
+        transformer.py
+      evaluate.py
+      metrics.py
+      train.py
       utils.py
 ```
 
@@ -33,7 +49,10 @@ thesis-work/
 ```powershell
 uv sync
 uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke
+uv run python -m ship_motion.train --config configs/lstm.yaml --smoke
 pwsh -File .\scripts\smoke_step_01_data.ps1
+pwsh -File .\scripts\smoke_step_02_training.ps1
+pwsh -File .\scripts\run_baselines.ps1
 ```
 
 ## 本地验证原则
@@ -48,3 +67,4 @@ pwsh -File .\scripts\smoke_step_01_data.ps1
 - 总体方案：`docs/project_overview.md`
 - 入门说明：`docs/learn.md`
 - 分步实现：`docs/implementation_steps/README.md`
+- Step 02 说明：`docs/implementation_steps/02_training_lstm.md`

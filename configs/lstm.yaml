@@ -1,0 +1,61 @@
+# LSTM 常规循环网络基线配置。
+# 如果你第一次验证训练流程，建议先跑这个配置或它的 smoke 模式。
+
+data:
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+
+  # 外生量 + 状态量 = 模型输入；状态量 = 预测目标。
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+  state_cols: [u, v, p, r, phi]
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+  target_cols: [u, v, p, r, phi]
+
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  seed: 42
+  batch_size: 128
+
+  # 正式 baseline 训练轮数。
+  # smoke 模式会自动将它缩小到 1。
+  epochs: 50
+
+  # AdamW 训练超参数。
+  lr: 0.001
+  weight_decay: 0.0001
+
+  # RNN 常用稳定化设置。
+  grad_clip: 1.0
+  early_stop_patience: 8
+
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+output_dir: outputs
+run_name: lstm_seq128_pred10
+
+model:
+  name: lstm
+
+  # 输入/输出维度要与数据列数一致。
+  input_dim: 11
+  target_dim: 5
+
+  # LSTM 编码器隐藏维度。
+  hidden_dim: 128
+
+  # 堆叠 LSTM 层数。
+  num_layers: 2
+
+  # Dropout 只在层数大于 1 时对 LSTM 内部生效；
+  # 预测头里也会复用这个值。
+  dropout: 0.1

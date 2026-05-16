@@ -1,0 +1,57 @@
+# Persistence 基线：不训练，只复制历史最后一个状态到未来所有预测步。
+# 它的作用不是追求高精度，而是给出一个“最低基线”：
+# 如果深度模型还不如它，就说明训练框架、数据或模型可能有问题。
+
+data:
+  # 训练集目录。虽然 Persistence 不需要真正训练，
+  # 但仍然沿用统一数据入口，便于复用 scaler 与评估流程。
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+
+  # 字段分组说明：
+  # exog_cols = 控制/环境量
+  # state_cols = 船舶状态量，也是未来预测目标
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+  state_cols: [u, v, p, r, phi]
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+  target_cols: [u, v, p, r, phi]
+
+  # 看过去 128 秒，预测未来 10 秒。
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+
+  # null 表示不限制文件数和窗口数。
+  # smoke test 时程序会自动覆盖成更小值。
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  # 随机种子主要影响 DataLoader 的打乱顺序等非模型部分。
+  seed: 42
+  batch_size: 128
+
+  # Persistence 不依赖 epoch 收敛，但这里保留统一字段，
+  # 方便整个训练/评估框架共用同一套配置结构。
+  epochs: 1
+  lr: 0.001
+  weight_decay: 0.0
+  grad_clip: 1.0
+  early_stop_patience: 1
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+# 所有输出都将写到 outputs/{run_name}/
+output_dir: outputs
+run_name: persistence_seq128_pred10
+
+model:
+  # Persistence 的核心逻辑是：
+  # 未来 pred_len 步都等于历史最后一个状态向量。
+  name: persistence
+  input_dim: 11
+  target_dim: 5

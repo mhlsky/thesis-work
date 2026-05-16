@@ -26,6 +26,8 @@
 
 - Use `uv` for environment and command execution when possible.
 - Prefer PowerShell-compatible commands and scripts for examples and automation.
+- When creating or rewriting text files that contain Chinese comments or documentation, use a UTF-8-safe editing path and avoid command patterns that may silently replace non-ASCII characters with `?` or mojibake.
+- After bulk file generation or scripted rewrites, quickly verify that Chinese text in touched `.md`, `.py`, `.yaml`, `.yml`, and `.ps1` files was preserved correctly.
 - Before introducing a new dependency, confirm it is necessary and add it to `pyproject.toml`.
 - Lightweight fallback logic is acceptable for smoke tests or early validation, but when work moves into formal implementation, training, evaluation, or integration, switch back to the proper runtime environment and official libraries when feasible.
 - Prefer repository-documented commands first:
@@ -37,7 +39,10 @@
 
 - Follow the existing code style and keep changes minimal unless a broader refactor is necessary.
 - Avoid moving files or restructuring modules without a clear need.
+- Prefer preserving useful existing comments, docstrings, and beginner-oriented explanations when modifying files; if they need to change, update them in place instead of dropping them by default.
+- When modifying existing files, prefer incremental edits that retain prior comments and explanatory text instead of replacing whole files.
 - When adding or substantially rewriting code, prefer beginner-friendly comments and docstrings that explain the purpose of the code, the role of key variables, and non-obvious control flow.
+- For newly created files or generated code blocks, prefer adding accompanying explanatory comments/docstrings so a beginner can understand the workflow, purpose, and key logic more easily.
 - Add brief comments only where the code would otherwise be hard to follow.
 - Keep scripts, configs, and package code consistent with each other when changing experiment workflow.
 
