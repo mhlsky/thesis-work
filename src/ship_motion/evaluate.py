@@ -126,6 +126,8 @@ def build_runtime_model_config(config: dict[str, Any]) -> dict[str, Any]:
     data_cfg = config.get("data", {})
     model_cfg.setdefault("input_dim", len(data_cfg.get("input_cols", [])))
     model_cfg.setdefault("target_dim", len(data_cfg.get("target_cols", [])))
+    model_cfg.setdefault("exog_dim", len(data_cfg.get("exog_cols", [])))
+    model_cfg.setdefault("state_dim", len(data_cfg.get("state_cols", [])))
     model_cfg["pred_len"] = int(data_cfg["pred_len"])
     return model_cfg
 

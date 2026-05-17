@@ -1,0 +1,70 @@
+# Lite-xLSTM 配置。
+# 作用：验证“xLSTM 风格指数门控 + 归一化记忆更新”是否比普通 RNN 更适合本任务。
+
+data:
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+
+  # 外生控制/环境量。
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+
+  # 船舶状态量，也是未来预测目标。
+  state_cols: [u, v, p, r, phi]
+
+  # 实际喂给模型的历史输入列。
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+
+  # 未来需要预测的目标列。
+  target_cols: [u, v, p, r, phi]
+
+  # 历史窗口长度与预测步长。
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+
+  # 正式训练默认不裁剪文件数和窗口数；
+  # smoke 模式会自动把它们压缩到极小值。
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  seed: 42
+  batch_size: 128
+  epochs: 50
+
+  # 使用 AdamW；如果训练不稳定，可把 lr 再调低。
+  lr: 0.001
+  weight_decay: 0.0001
+
+  # RNN/xLSTM 训练建议保留梯度裁剪。
+  grad_clip: 1.0
+  early_stop_patience: 8
+
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+output_dir: outputs
+run_name: lite_xlstm_seq128_pred10
+
+model:
+  name: lite_xlstm
+
+  # 输入和输出维度要与数据列保持一致。
+  input_dim: 11
+  target_dim: 5
+
+  # d_model 是内部隐藏特征宽度。
+  d_model: 128
+
+  # 堆叠多少层 Lite-xLSTM block。
+  num_layers: 2
+
+  # Dropout 同时用于 block 输出和预测头。
+  dropout: 0.1
+
+  # exp 门控前的裁剪范围，防止数值爆炸。
+  gate_clip: 5.0

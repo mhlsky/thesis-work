@@ -11,6 +11,8 @@
 - gru
 - tcn
 - transformer
+- lite_xlstm
+- ccg_xlstm
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from .lstm import LSTMForecaster
 from .persistence import PersistenceForecaster
 from .tcn import TCNForecaster
 from .transformer import TransformerForecaster
+from .xlstm import CCGXLSTMForecaster, LiteXLSTMForecaster
 
 
 def build_model_from_config(model_cfg: dict[str, Any]) -> Any:
@@ -70,6 +73,28 @@ def build_model_from_config(model_cfg: dict[str, Any]) -> Any:
             dropout=float(model_cfg.get("dropout", 0.1)),
             dim_feedforward=int(model_cfg.get("dim_feedforward", int(model_cfg.get("d_model", 128)) * 4)),
         )
+    if name == "lite_xlstm":
+        return LiteXLSTMForecaster(
+            input_dim=int(model_cfg["input_dim"]),
+            d_model=int(model_cfg.get("d_model", 128)),
+            num_layers=int(model_cfg.get("num_layers", 2)),
+            pred_len=int(model_cfg["pred_len"]),
+            target_dim=int(model_cfg["target_dim"]),
+            dropout=float(model_cfg.get("dropout", 0.1)),
+            gate_clip=float(model_cfg.get("gate_clip", 5.0)),
+        )
+    if name == "ccg_xlstm":
+        return CCGXLSTMForecaster(
+            state_dim=int(model_cfg.get("state_dim", 5)),
+            exog_dim=int(model_cfg.get("exog_dim", 6)),
+            d_model=int(model_cfg.get("d_model", 128)),
+            num_layers=int(model_cfg.get("num_layers", 2)),
+            pred_len=int(model_cfg["pred_len"]),
+            target_dim=int(model_cfg["target_dim"]),
+            context_dim=int(model_cfg.get("context_dim", 64)),
+            dropout=float(model_cfg.get("dropout", 0.1)),
+            gate_clip=float(model_cfg.get("gate_clip", 5.0)),
+        )
     raise ValueError(f"Unsupported model name: {name!r}")
 
 
@@ -79,5 +104,7 @@ __all__ = [
     "GRUForecaster",
     "TCNForecaster",
     "TransformerForecaster",
+    "LiteXLSTMForecaster",
+    "CCGXLSTMForecaster",
     "build_model_from_config",
 ]

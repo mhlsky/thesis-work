@@ -1,0 +1,65 @@
+# CCG-xLSTM 配置。
+# 作用：在 Lite-xLSTM 上加入控制/环境条件门控，
+# 让推进器转速、舵角和风场直接参与记忆更新。
+
+data:
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+
+  # 外生控制/环境量。
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+
+  # 船舶状态量，也是模型预测目标。
+  state_cols: [u, v, p, r, phi]
+
+  # 历史输入包含“外生量 + 状态量”。
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+  target_cols: [u, v, p, r, phi]
+
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  seed: 42
+  batch_size: 128
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0001
+
+  # xLSTM 类模型训练时保留梯度裁剪更稳。
+  grad_clip: 1.0
+  early_stop_patience: 8
+
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+output_dir: outputs
+run_name: ccg_xlstm_seq128_pred10
+
+model:
+  name: ccg_xlstm
+
+  # 明确告诉模型：前 6 维是外生量，后 5 维是状态量。
+  exog_dim: 6
+  state_dim: 5
+  target_dim: 5
+
+  # 隐藏特征宽度。
+  d_model: 128
+
+  # context_dim 是外生量 MLP 编码后的上下文宽度。
+  context_dim: 64
+
+  # 堆叠多少层 CCG-xLSTM block。
+  num_layers: 2
+  dropout: 0.1
+
+  # 限制 exp 门控的输入范围，避免数值不稳定。
+  gate_clip: 5.0
