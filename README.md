@@ -90,6 +90,7 @@ pwsh -File .\scripts\run_baselines.ps1
 - 总体方案：`docs/project_overview.md`
 - 入门说明：`docs/learn.md`
 - 实验手册：`docs/experiment_manual.md`
+- 云上 tmux 手册：`docs/tmux_cloud_manual.md`
 - 分步实现：`docs/implementation_steps/README.md`
 - Step 02 说明：`docs/implementation_steps/02_training_lstm.md`
 - Step 03 说明：`docs/implementation_steps/03_vmd_module.md`

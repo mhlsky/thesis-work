@@ -102,6 +102,12 @@ scripts/setup_cloud_env.sh
 scripts/run_full_training.sh
 ```
 
+如果你希望训练在 SSH 断开后继续运行，建议再配合阅读：
+
+```text
+docs/tmux_cloud_manual.md
+```
+
 推荐顺序：
 
 ```bash
