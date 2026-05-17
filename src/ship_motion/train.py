@@ -22,8 +22,10 @@ from ship_motion.evaluate import (
     compute_model_losses,
     default_run_dir,
     evaluate_model,
+    evaluate_model_with_predictions,
     move_batch_to_device,
     resolve_device,
+    save_predictions_npz,
 )
 from ship_motion.models import build_model_from_config
 from ship_motion.utils import ensure_dir, load_yaml, save_json, set_seed
@@ -268,7 +270,8 @@ def finalize_and_evaluate(
     max_eval_steps = config.get("train", {}).get("max_eval_steps")
     results: dict[str, Any] = {}
     for split in ["val", "routine_test", "ood_test"]:
-        metrics, _ = evaluate_model(
+        collect_predictions = split in {"routine_test", "ood_test"}
+        metrics, _, payload = evaluate_model_with_predictions(
             model=model,
             loader=loaders[split],
             scaler=bundle["scaler"],
@@ -277,8 +280,11 @@ def finalize_and_evaluate(
             lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
             physics_cfg=config.get("physics", {}),
             max_steps=max_eval_steps,
+            collect_predictions=collect_predictions,
         )
         save_json(metrics, run_dir / f"metrics_{split}.json")
+        if collect_predictions and payload is not None:
+            save_predictions_npz(payload, run_dir / f"predictions_{split}.npz")
         results[split] = metrics
     return results
 

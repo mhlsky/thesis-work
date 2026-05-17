@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -30,6 +31,32 @@ def evaluate_model(
     max_steps: int | None = None,
 ) -> tuple[dict[str, float], float]:
     """返回反标准化指标和标准化空间平均 MSE。"""
+    metrics, loss_value, _ = evaluate_model_with_predictions(
+        model=model,
+        loader=loader,
+        scaler=scaler,
+        target_cols=target_cols,
+        device=device,
+        lambda_vmd=lambda_vmd,
+        physics_cfg=physics_cfg,
+        max_steps=max_steps,
+        collect_predictions=False,
+    )
+    return metrics, loss_value
+
+
+def evaluate_model_with_predictions(
+    model: torch.nn.Module,
+    loader: DataLoader,
+    scaler: Any,
+    target_cols: Sequence[str],
+    device: torch.device,
+    lambda_vmd: float = 0.0,
+    physics_cfg: dict[str, Any] | None = None,
+    max_steps: int | None = None,
+    collect_predictions: bool = True,
+) -> tuple[dict[str, float], float, dict[str, np.ndarray] | None]:
+    """评估模型，并可选收集预测结果用于后续绘图。"""
     criterion = torch.nn.MSELoss()
     model.eval()
     losses: list[float] = []
@@ -75,7 +102,14 @@ def evaluate_model(
     metrics["num_samples"] = int(y_pred_raw.shape[0])
     metrics["num_forecast_steps"] = int(y_pred_raw.shape[1])
     metrics["loss_mse_std"] = float(sum(losses) / len(losses))
-    return metrics, float(sum(losses) / len(losses))
+    prediction_payload = None
+    if collect_predictions:
+        prediction_payload = {
+            "y_pred": y_pred_raw.numpy().astype(np.float32),
+            "y_true": y_true_raw.numpy().astype(np.float32),
+            "last_state_raw": last_state_raw.numpy().astype(np.float32),
+        }
+    return metrics, float(sum(losses) / len(losses)), prediction_payload
 
 
 def extract_y_hat(model_output: Any) -> torch.Tensor:
@@ -173,6 +207,13 @@ def evaluate_splits(
     return results
 
 
+def save_predictions_npz(predictions: dict[str, np.ndarray], path: str | Path) -> None:
+    """把预测结果保存成 npz，供 Step 07 绘图与对比使用。"""
+    target = Path(path)
+    ensure_dir(target.parent)
+    np.savez_compressed(target, **predictions)
+
+
 def build_loaders(bundle: dict[str, Any], batch_size: int, num_workers: int) -> dict[str, DataLoader]:
     """构造 train/val/test DataLoader。"""
     return {
@@ -237,6 +278,7 @@ def evaluate_from_config(
     split: str = "all",
     smoke: bool = False,
     save: bool = True,
+    save_predictions: bool = False,
 ) -> dict[str, dict[str, float]]:
     """独立评估命令入口。"""
     config = load_yaml(config_path)
@@ -255,22 +297,32 @@ def evaluate_from_config(
 
     split_names = [split] if split != "all" else ["val", "routine_test", "ood_test"]
     model = load_model_from_config(config, checkpoint_path=checkpoint, device=device)
-    results = evaluate_splits(
-        model=model,
-        loaders=loaders,
-        scaler=bundle["scaler"],
-        target_cols=config["data"]["target_cols"],
-        device=device,
-        split_names=split_names,
-        lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
-        physics_cfg=config.get("physics", {}),
-        max_steps=train_cfg.get("max_eval_steps"),
-    )
+    lambda_vmd = float(config.get("vmd", {}).get("lambda_vmd", 0.0))
+    physics_cfg = config.get("physics", {})
+    results: dict[str, dict[str, float]] = {}
+    prediction_payloads: dict[str, dict[str, np.ndarray]] = {}
+    for split_name in split_names:
+        metrics, _, payload = evaluate_model_with_predictions(
+            model=model,
+            loader=loaders[split_name],
+            scaler=bundle["scaler"],
+            target_cols=config["data"]["target_cols"],
+            device=device,
+            lambda_vmd=lambda_vmd,
+            physics_cfg=physics_cfg,
+            max_steps=train_cfg.get("max_eval_steps"),
+            collect_predictions=save_predictions,
+        )
+        results[split_name] = metrics
+        if save_predictions and payload is not None:
+            prediction_payloads[split_name] = payload
 
     if save:
         run_dir = ensure_dir(default_run_dir(config))
         for split_name, metrics in results.items():
             save_json(metrics, run_dir / f"metrics_{split_name}.json")
+            if save_predictions and split_name in prediction_payloads:
+                save_predictions_npz(prediction_payloads[split_name], run_dir / f"predictions_{split_name}.npz")
     return results
 
 
@@ -306,6 +358,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--split", choices=["all", "val", "routine_test", "ood_test"], default="all")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--no-save", action="store_true")
+    parser.add_argument("--save-predictions", action="store_true")
     args = parser.parse_args(argv)
 
     results = evaluate_from_config(
@@ -314,6 +367,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         split=args.split,
         smoke=args.smoke,
         save=not args.no_save,
+        save_predictions=args.save_predictions,
     )
     print(json.dumps(results, indent=2, ensure_ascii=False))
 
