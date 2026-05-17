@@ -16,6 +16,7 @@ thesis-work/
     gru.yaml
     tcn.yaml
     transformer.yaml
+    vmd_ccg_xlstm.yaml
   data/
   docs/
     project_overview.md
@@ -26,12 +27,17 @@ thesis-work/
   scripts/
     smoke_step_01_data.ps1
     smoke_step_02_training.ps1
+    smoke_step_03_vmd.ps1
+    build_vmd_cache.ps1
     run_baselines.ps1
   src/
     ship_motion/
       data/
         dataset.py
         scaler.py
+        vmd.py
+      losses/
+        vmd_loss.py
       models/
         persistence.py
         lstm.py
@@ -50,8 +56,11 @@ thesis-work/
 uv sync
 uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke
 uv run python -m ship_motion.train --config configs/lstm.yaml --smoke
+uv run python -m ship_motion.data.vmd --config configs/vmd_ccg_xlstm.yaml --smoke
 pwsh -File .\scripts\smoke_step_01_data.ps1
 pwsh -File .\scripts\smoke_step_02_training.ps1
+pwsh -File .\scripts\smoke_step_03_vmd.ps1
+pwsh -File .\scripts\build_vmd_cache.ps1
 pwsh -File .\scripts\run_baselines.ps1
 ```
 
@@ -68,3 +77,4 @@ pwsh -File .\scripts\run_baselines.ps1
 - 入门说明：`docs/learn.md`
 - 分步实现：`docs/implementation_steps/README.md`
 - Step 02 说明：`docs/implementation_steps/02_training_lstm.md`
+- Step 03 说明：`docs/implementation_steps/03_vmd_module.md`

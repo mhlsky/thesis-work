@@ -1,0 +1,86 @@
+# Step 03/05 预留配置：VMD-CCG-xLSTM。
+# 当前步骤主要使用其中的 `data` 与 `vmd` 字段来构建 VMD 标签缓存；
+# 真正的 xLSTM 主干与训练集成会在后续步骤实现。
+
+data:
+  # 四个数据划分目录沿用基础实验设置。
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+
+  # 外生控制/环境量。
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+
+  # 船舶状态量，也是后续 VMD 分解目标。
+  state_cols: [u, v, p, r, phi]
+
+  # 模型历史输入列。
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+
+  # 未来预测目标列。
+  target_cols: [u, v, p, r, phi]
+
+  # 历史窗口与预测窗口长度。
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+
+  # 正式构建缓存时默认不截断文件数和窗口数。
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  # 当前步骤还不正式训练，但保留这些字段，方便后续步骤直接复用。
+  seed: 42
+  batch_size: 128
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  early_stop_patience: 8
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+vmd:
+  # Step 03 必做模块开关。关闭后 Dataset 会回退到原有无 VMD 流程。
+  enabled: true
+
+  # VMD 模态数，默认拆成趋势 / 周期 / 扰动三类。
+  K: 3
+
+  # 带宽约束系数，采用常见默认值。
+  alpha: 2000
+
+  # 噪声容忍参数。0 表示严格重构。
+  tau: 0.0
+
+  # 是否强制包含直流分量。
+  DC: false
+
+  # 初始化方式。1 通常表示均匀初始化中心频率。
+  init: 1
+
+  # VMD 迭代停止阈值，越小越严格。
+  tol: 1.0e-7
+
+  # 后续训练时 VMD 辅助损失的权重。
+  lambda_vmd: 0.2
+
+  # VMD 缓存根目录。
+  # 程序会在下面自动创建 train / validation / routine_test / ood_test 子目录。
+  cache_root: outputs/cache/vmd/K3_alpha2000
+
+output_dir: outputs
+run_name: vmd_ccg_xlstm_seq128_pred10
+
+model:
+  # Step 05 之前这里只作为配置骨架占位。
+  name: vmd_ccg_xlstm
+  input_dim: 11
+  target_dim: 5
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.1

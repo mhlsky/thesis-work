@@ -91,6 +91,9 @@ class ShipWindowDataset:
         pred_len: int,
         stride: int = 1,
         max_windows_per_file: int | None = None,
+        vmd_cache_dir: str | Path | None = None,
+        vmd_enabled: bool = False,
+        vmd_K: int | None = None,
     ) -> None:
         """初始化一个“滑动窗口数据集”。
 
@@ -124,10 +127,19 @@ class ShipWindowDataset:
         self.pred_len = pred_len
         self.stride = stride
         self.max_windows_per_file = max_windows_per_file
+        self.vmd_enabled = vmd_enabled
+        self.vmd_K = vmd_K
+        self.vmd_cache_dir = Path(vmd_cache_dir) if vmd_cache_dir is not None else None
         # 记录“外生变量列”和“状态列”在 input_cols 里的位置，
         # 方便后面从 x 中快速切出子特征。
         self.exog_indices = _column_indices(self.input_cols, self.exog_cols)
         self.state_indices = _column_indices(self.input_cols, self.state_cols)
+
+        if self.vmd_enabled:
+            if self.vmd_cache_dir is None:
+                raise ValueError("vmd_cache_dir must be provided when vmd_enabled=True.")
+            if self.vmd_K is None or self.vmd_K <= 0:
+                raise ValueError("vmd_K must be a positive integer when vmd_enabled=True.")
 
         # _file_cache: 保存每个文件解析后的二维数组，避免反复读盘。
         self._file_cache: list[dict[str, Any]] = []
@@ -174,6 +186,18 @@ class ShipWindowDataset:
             "last_state_raw": _to_tensor(last_state_raw),
             "file": str(cached["file"]),
             "start": start,
+            **(
+                {
+                    # y_modes 保持原始物理尺度，不做标准化。
+                    # 原因是后续 VMD 辅助监督通常直接对应真实模态分量，
+                    # 而不是当前训练框架里的标准化 y。
+                    "y_modes": _to_tensor(
+                        cached["y_modes"][start + self.seq_len : start + self.seq_len + self.pred_len]
+                    ),
+                }
+                if self.vmd_enabled
+                else {}
+            ),
         }
 
     def _build_index(self) -> None:
@@ -181,6 +205,14 @@ class ShipWindowDataset:
         for file_idx, file in enumerate(self.files):
             # 每个 CSV 只读一次，读取结果缓存下来。
             cached = _read_csv_arrays(file, self.input_cols, self.target_cols)
+            if self.vmd_enabled:
+                cached["y_modes"] = _load_vmd_modes(
+                    file=file,
+                    cache_dir=self.vmd_cache_dir,
+                    target_cols=self.target_cols,
+                    expected_length=len(cached["y"]),
+                    expected_k=int(self.vmd_K),
+                )
             self._file_cache.append(cached)
 
             row_count = len(cached["x"])
@@ -251,16 +283,48 @@ def build_datasets(config: dict[str, Any], smoke: bool = False) -> dict[str, Any
         "max_windows_per_file": data_cfg.get("max_windows_per_file"),
     }
 
+    vmd_cfg = cfg.get("vmd", {})
+    vmd_enabled = bool(vmd_cfg.get("enabled", False))
+    if vmd_enabled:
+        vmd_cache_root = _resolve_optional_config_path(
+            vmd_cfg.get("cache_root") or _default_vmd_cache_root(vmd_cfg),
+            config_path,
+        )
+        common_kwargs.update(
+            {
+                "vmd_enabled": True,
+                "vmd_K": int(vmd_cfg["K"]),
+            }
+        )
+    else:
+        vmd_cache_root = None
+
     return {
         "train_files": train_files,
         "val_files": val_files,
         "routine_test_files": routine_test_files,
         "ood_test_files": ood_test_files,
         "scaler": scaler,
-        "train": ShipWindowDataset(train_files, **common_kwargs),
-        "val": ShipWindowDataset(val_files, **common_kwargs),
-        "routine_test": ShipWindowDataset(routine_test_files, **common_kwargs),
-        "ood_test": ShipWindowDataset(ood_test_files, **common_kwargs),
+        "train": ShipWindowDataset(
+            train_files,
+            **common_kwargs,
+            vmd_cache_dir=(vmd_cache_root / "train") if vmd_enabled else None,
+        ),
+        "val": ShipWindowDataset(
+            val_files,
+            **common_kwargs,
+            vmd_cache_dir=(vmd_cache_root / "validation") if vmd_enabled else None,
+        ),
+        "routine_test": ShipWindowDataset(
+            routine_test_files,
+            **common_kwargs,
+            vmd_cache_dir=(vmd_cache_root / "routine_test") if vmd_enabled else None,
+        ),
+        "ood_test": ShipWindowDataset(
+            ood_test_files,
+            **common_kwargs,
+            vmd_cache_dir=(vmd_cache_root / "ood_test") if vmd_enabled else None,
+        ),
     }
 
 
@@ -297,6 +361,8 @@ def run_smoke_test(config_path: str | Path = DEFAULT_CONFIG_PATH) -> None:
     print(f"y shape: {_shape(sample['y'])}")
     print(f"y_raw shape: {_shape(sample['y_raw'])}")
     print(f"last_state_raw shape: {_shape(sample['last_state_raw'])}")
+    if "y_modes" in sample:
+        print(f"y_modes shape: {_shape(sample['y_modes'])}")
     print(f"batch x shape: {_shape(batch['x'])}")
     print(f"batch y shape: {_shape(batch['y'])}")
     print(f"sample file: {sample['file']}")
@@ -371,6 +437,33 @@ def _resolve_config_path(path_value: str | Path, config_dir: Path, repo_root: Pa
     return (repo_root / path).resolve()
 
 
+def _resolve_optional_config_path(
+    path_value: str | Path | None,
+    config_path: str | Path | None,
+) -> Path | None:
+    """解析可选配置路径。
+
+    与 `_resolve_config_path` 的区别是：
+    - 允许传入 None；
+    - 便于处理 VMD 缓存目录这类“可开可关”的路径字段。
+    """
+    if path_value is None:
+        return None
+    if config_path is None:
+        return Path(path_value).resolve()
+    config_dir = Path(config_path).resolve().parent
+    repo_root = DEFAULT_CONFIG_PATH.parent.parent
+    return _resolve_config_path(path_value, config_dir, repo_root)
+
+
+def _default_vmd_cache_root(vmd_cfg: dict[str, Any]) -> str:
+    """根据 VMD 参数生成默认缓存目录名。"""
+    k = int(vmd_cfg.get("K", 3))
+    alpha = vmd_cfg.get("alpha", 2000)
+    alpha_str = str(alpha).replace(".", "_")
+    return f"outputs/cache/vmd/K{k}_alpha{alpha_str}"
+
+
 def _read_csv_arrays(
     file: str | Path,
     input_cols: Sequence[str],
@@ -394,6 +487,62 @@ def _read_csv_arrays(
             y_rows.append(_read_float_values(row, target_cols, file, row_idx))
 
     return {"file": Path(file), "x": x_rows, "y": y_rows}
+
+
+def _load_vmd_modes(
+    file: str | Path,
+    cache_dir: Path | None,
+    target_cols: Sequence[str],
+    expected_length: int,
+    expected_k: int,
+) -> Any:
+    """读取单个 CSV 对应的 VMD 模态缓存。
+
+    缓存文件名与 CSV stem 对齐，例如：
+    - `train/xxx.csv`
+    - `outputs/cache/vmd/.../train/xxx.npz`
+    """
+    if cache_dir is None:
+        raise ValueError("cache_dir must not be None when loading VMD modes.")
+
+    try:
+        import numpy as np
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "NumPy is required for loading VMD cache. Please run `uv sync` first."
+        ) from exc
+
+    cache_path = cache_dir / f"{Path(file).stem}.npz"
+    if not cache_path.exists():
+        raise FileNotFoundError(
+            f"VMD cache not found for {file}. Expected cache file: {cache_path}"
+        )
+
+    with np.load(cache_path, allow_pickle=False) as loaded:
+        modes = loaded["modes"]
+        cached_target_cols = loaded["target_cols"].tolist()
+        cached_k = int(loaded["K"])
+
+    if list(cached_target_cols) != list(target_cols):
+        raise ValueError(
+            f"VMD cache target_cols mismatch for {cache_path}: "
+            f"expected {list(target_cols)}, got {list(cached_target_cols)}"
+        )
+    if modes.shape[0] != expected_length:
+        raise ValueError(
+            f"VMD cache length mismatch for {cache_path}: "
+            f"expected {expected_length}, got {modes.shape[0]}"
+        )
+    if modes.shape[1] != len(target_cols):
+        raise ValueError(
+            f"VMD cache target_dim mismatch for {cache_path}: "
+            f"expected {len(target_cols)}, got {modes.shape[1]}"
+        )
+    if cached_k != expected_k or modes.shape[2] != expected_k:
+        raise ValueError(
+            f"VMD cache K mismatch for {cache_path}: expected {expected_k}, got {cached_k}"
+        )
+    return modes.tolist()
 
 
 def _limited_files(data_dir: str | Path, max_files: int | None) -> list[Path]:

@@ -5,9 +5,11 @@ description = "Ship motion prediction experiment package."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy>=1.26",
     "PyYAML>=6.0",
     "scikit-learn>=1.5",
     "torch>=2.4",
+    "vmdpy>=0.2",
 ]
 
 [build-system]
