@@ -64,6 +64,20 @@ pwsh -File .\scripts\build_vmd_cache.ps1
 pwsh -File .\scripts\run_baselines.ps1
 ```
 
+## Step 01~07 实验手册
+
+如果你想按步骤完整跑通本项目，建议直接看：
+
+- `docs/experiment_manual.md`
+
+这份手册已经整理了：
+
+- Step 01~07 的推荐运行顺序
+- 每一步的 smoke / 正式命令
+- 输出目录说明
+- Step 07 的汇总与绘图命令
+- 常见报错与排查建议
+
 ## 本地验证原则
 
 - 每个实现步骤都必须配套一个轻量 smoke-test 脚本或等价命令。
@@ -75,6 +89,7 @@ pwsh -File .\scripts\run_baselines.ps1
 
 - 总体方案：`docs/project_overview.md`
 - 入门说明：`docs/learn.md`
+- 实验手册：`docs/experiment_manual.md`
 - 分步实现：`docs/implementation_steps/README.md`
 - Step 02 说明：`docs/implementation_steps/02_training_lstm.md`
 - Step 03 说明：`docs/implementation_steps/03_vmd_module.md`
