@@ -82,6 +82,38 @@ def compute_metrics(y_pred_raw: Any, y_true_raw: Any, target_cols: Sequence[str]
     return metrics
 
 
+def smoothness_metric(y_pred_raw: Any) -> float:
+    """预测序列的二阶差分均方值，越小表示越平滑。"""
+    pred = _to_numpy(y_pred_raw).astype(np.float64)
+    if pred.shape[1] < 3:
+        return 0.0
+    d1 = pred[:, 1:, :] - pred[:, :-1, :]
+    d2 = d1[:, 1:, :] - d1[:, :-1, :]
+    return float(np.mean(np.square(d2)))
+
+
+def roll_consistency_rmse(
+    y_pred_raw: Any,
+    last_state_raw: Any,
+    dt: float = 1.0,
+    p_idx: int = 2,
+    phi_idx: int = 4,
+) -> float:
+    """衡量 p 与 phi 是否满足近似积分关系，越小越好。"""
+    pred = _to_numpy(y_pred_raw).astype(np.float64)
+    last_state = _to_numpy(last_state_raw).astype(np.float64)
+    phi_hat = pred[:, :, phi_idx]
+    p_hat = pred[:, :, p_idx]
+    phi_last = last_state[:, phi_idx]
+    p_last = last_state[:, p_idx]
+
+    residuals = [phi_hat[:, 0] - phi_last - p_last * dt]
+    if pred.shape[1] > 1:
+        residuals.append(phi_hat[:, 1:] - phi_hat[:, :-1] - p_hat[:, :-1] * dt)
+    flat = np.concatenate([item.reshape(-1) for item in residuals], axis=0)
+    return float(np.sqrt(np.mean(np.square(flat))))
+
+
 def _to_numpy_pair(y_pred: Any, y_true: Any) -> tuple[np.ndarray, np.ndarray]:
     pred = _to_numpy(y_pred)
     true = _to_numpy(y_true)

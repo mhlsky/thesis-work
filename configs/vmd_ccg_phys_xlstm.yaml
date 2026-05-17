@@ -1,0 +1,74 @@
+# Step 06：VMD-CCG-Phys-xLSTM 最终主模型配置。
+# 核心思路：在 Step 05 的 VMD-CCG-xLSTM 上加入 raw 物理尺度的平滑性与横摇运动学约束。
+
+data:
+  train_dir: data/patrol_ship_routine/processed/train
+  val_dir: data/patrol_ship_routine/processed/validation
+  routine_test_dir: data/patrol_ship_routine/processed/test
+  ood_test_dir: data/patrol_ship_ood/processed/test
+
+  exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
+  state_cols: [u, v, p, r, phi]
+  input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
+  target_cols: [u, v, p, r, phi]
+
+  seq_len: 128
+  pred_len: 10
+  stride: 1
+  max_files: null
+  max_windows_per_file: null
+
+train:
+  seed: 42
+  batch_size: 128
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  early_stop_patience: 8
+  num_workers: 0
+  device: auto
+  max_train_steps_per_epoch: null
+  max_eval_steps: null
+
+vmd:
+  enabled: true
+  K: 3
+  alpha: 2000
+  tau: 0.0
+  DC: false
+  init: 1
+  tol: 1.0e-7
+  lambda_vmd: 0.2
+  cache_root: outputs/cache/vmd/K3_alpha2000
+
+physics:
+  # 开启最终主模型的物理约束。
+  enabled: true
+
+  # 平滑性约束：惩罚二阶差分过大。
+  lambda_smooth: 0.01
+
+  # 横摇运动学约束：phi 的变化应和 p 近似一致。
+  lambda_roll: 0.05
+
+  # 当前数据按 1 Hz 处理。
+  dt: 1.0
+
+output_dir: outputs
+run_name: vmd_ccg_phys_xlstm_seq128_pred10
+
+model:
+  name: vmd_ccg_xlstm
+  exog_dim: 6
+  state_dim: 5
+  target_dim: 5
+  d_model: 128
+  context_dim: 64
+  num_layers: 2
+  dropout: 0.1
+  gate_clip: 5.0
+  decode_type: delta
+  use_state_mixer: true
+  state_mixer_hidden_dim: 16
+  state_mixer_dropout: 0.0

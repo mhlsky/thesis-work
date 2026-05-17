@@ -12,8 +12,9 @@ import torch
 from torch.utils.data import DataLoader
 
 from ship_motion.data.dataset import DEFAULT_CONFIG_PATH, build_datasets
+from ship_motion.losses.physics import physics_loss
 from ship_motion.losses.vmd_loss import standardize_y_modes, vmd_aux_loss
-from ship_motion.metrics import compute_metrics
+from ship_motion.metrics import compute_metrics, roll_consistency_rmse, smoothness_metric
 from ship_motion.models import build_model_from_config
 from ship_motion.utils import ensure_dir, load_yaml, save_json, set_seed
 
@@ -25,6 +26,7 @@ def evaluate_model(
     target_cols: Sequence[str],
     device: torch.device,
     lambda_vmd: float = 0.0,
+    physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
 ) -> tuple[dict[str, float], float]:
     """返回反标准化指标和标准化空间平均 MSE。"""
@@ -33,6 +35,7 @@ def evaluate_model(
     losses: list[float] = []
     preds: list[torch.Tensor] = []
     trues: list[torch.Tensor] = []
+    last_states: list[torch.Tensor] = []
 
     with torch.no_grad():
         for step, batch in enumerate(loader):
@@ -44,8 +47,10 @@ def evaluate_model(
                 model_output=output,
                 batch=batch,
                 criterion=criterion,
+                scaler=scaler,
                 y_std=scaler.y_std,
                 lambda_vmd=lambda_vmd,
+                physics_cfg=physics_cfg,
             )
             losses.append(float(loss.item()))
 
@@ -53,13 +58,20 @@ def evaluate_model(
             # 真实标签直接使用数据集已经提供好的 y_raw。
             preds.append(scaler.inverse_y_tensor(y_hat).detach().cpu())
             trues.append(batch["y_raw"].detach().cpu())
+            last_states.append(batch["last_state_raw"].detach().cpu())
 
     if not preds:
         raise ValueError("Evaluation loader produced no batches.")
 
     y_pred_raw = torch.cat(preds, dim=0)
     y_true_raw = torch.cat(trues, dim=0)
+    last_state_raw = torch.cat(last_states, dim=0)
     metrics = compute_metrics(y_pred_raw, y_true_raw, target_cols)
+    physics_enabled = bool((physics_cfg or {}).get("enabled", False))
+    if physics_enabled:
+        dt = float((physics_cfg or {}).get("dt", 1.0))
+        metrics["smoothness"] = smoothness_metric(y_pred_raw)
+        metrics["roll_consistency_rmse"] = roll_consistency_rmse(y_pred_raw, last_state_raw, dt=dt)
     metrics["num_samples"] = int(y_pred_raw.shape[0])
     metrics["num_forecast_steps"] = int(y_pred_raw.shape[1])
     metrics["loss_mse_std"] = float(sum(losses) / len(losses))
@@ -79,8 +91,10 @@ def compute_model_losses(
     model_output: Any,
     batch: dict[str, Any],
     criterion: torch.nn.Module,
+    scaler: Any | None = None,
     y_std: Sequence[float] | None = None,
     lambda_vmd: float = 0.0,
+    physics_cfg: dict[str, Any] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """统一计算主预测损失和可选的 VMD 辅助损失。"""
     y_hat = extract_y_hat(model_output)
@@ -102,6 +116,20 @@ def compute_model_losses(
         )
         aux_loss = vmd_aux_loss(model_output["mode_preds"], y_modes_std)
         total_loss = total_loss + lambda_vmd * aux_loss
+
+    physics_enabled = bool((physics_cfg or {}).get("enabled", False))
+    if physics_enabled:
+        if scaler is None:
+            raise ValueError("Physics loss requires scaler for inverse transform.")
+        y_hat_raw = scaler.inverse_y_tensor(y_hat)
+        physics_total, _, _ = physics_loss(
+            y_raw=y_hat_raw,
+            last_state_raw=batch["last_state_raw"],
+            lambda_smooth=float((physics_cfg or {}).get("lambda_smooth", 0.0)),
+            lambda_roll=float((physics_cfg or {}).get("lambda_roll", 0.0)),
+            dt=float((physics_cfg or {}).get("dt", 1.0)),
+        )
+        total_loss = total_loss + physics_total
 
     return y_hat, total_loss, pred_loss, aux_loss
 
@@ -125,6 +153,7 @@ def evaluate_splits(
     device: torch.device,
     split_names: Iterable[str],
     lambda_vmd: float = 0.0,
+    physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
 ) -> dict[str, dict[str, float]]:
     """按 split 逐个评估。"""
@@ -137,6 +166,7 @@ def evaluate_splits(
             target_cols=target_cols,
             device=device,
             lambda_vmd=lambda_vmd,
+            physics_cfg=physics_cfg,
             max_steps=max_steps,
         )
         results[split] = metrics
@@ -233,6 +263,7 @@ def evaluate_from_config(
         device=device,
         split_names=split_names,
         lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
+        physics_cfg=config.get("physics", {}),
         max_steps=train_cfg.get("max_eval_steps"),
     )
 

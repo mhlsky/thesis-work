@@ -40,8 +40,10 @@ def train_one_epoch(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    scaler: Any | None = None,
     y_std: Sequence[float] | None = None,
     lambda_vmd: float = 0.0,
+    physics_cfg: dict[str, Any] | None = None,
     grad_clip: float | None = None,
     max_steps: int | None = None,
 ) -> float:
@@ -60,8 +62,10 @@ def train_one_epoch(
             model_output=output,
             batch=batch,
             criterion=criterion,
+            scaler=scaler,
             y_std=y_std,
             lambda_vmd=lambda_vmd,
+            physics_cfg=physics_cfg,
         )
         loss.backward()
 
@@ -84,6 +88,7 @@ def validate(
     target_cols: Sequence[str],
     device: torch.device,
     lambda_vmd: float = 0.0,
+    physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
 ) -> tuple[dict[str, float], float]:
     """验证集评估，指标在真实物理尺度上计算。"""
@@ -94,6 +99,7 @@ def validate(
         target_cols=target_cols,
         device=device,
         lambda_vmd=lambda_vmd,
+        physics_cfg=physics_cfg,
         max_steps=max_steps,
     )
 
@@ -125,6 +131,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     optimizer = build_optimizer(model, train_cfg)
     max_eval_steps = train_cfg.get("max_eval_steps")
     lambda_vmd = float(runtime_config.get("vmd", {}).get("lambda_vmd", 0.0))
+    physics_cfg = runtime_config.get("physics", {})
 
     # Persistence 没有可训练参数，会走这个分支：
     # 不训练，只直接评估并输出统一格式文件。
@@ -136,6 +143,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             target_cols=data_cfg["target_cols"],
             device=device,
             lambda_vmd=lambda_vmd,
+            physics_cfg=physics_cfg,
             max_steps=max_eval_steps,
         )
         save_checkpoint(run_dir / "best.pt", model, runtime_config, best_metric=val_metrics["rmse_mean"], epoch=0)
@@ -180,8 +188,10 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             loader=loaders["train"],
             optimizer=optimizer,
             device=device,
+            scaler=bundle["scaler"],
             y_std=bundle["scaler"].y_std,
             lambda_vmd=lambda_vmd,
+            physics_cfg=physics_cfg,
             grad_clip=float(grad_clip) if grad_clip is not None else None,
             max_steps=max_train_steps,
         )
@@ -192,6 +202,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             target_cols=data_cfg["target_cols"],
             device=device,
             lambda_vmd=lambda_vmd,
+            physics_cfg=physics_cfg,
             max_steps=max_eval_steps,
         )
         elapsed = time.perf_counter() - start_time
@@ -264,6 +275,7 @@ def finalize_and_evaluate(
             target_cols=data_cfg["target_cols"],
             device=device,
             lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
+            physics_cfg=config.get("physics", {}),
             max_steps=max_eval_steps,
         )
         save_json(metrics, run_dir / f"metrics_{split}.json")
