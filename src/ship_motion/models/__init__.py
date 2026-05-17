@@ -13,6 +13,7 @@
 - transformer
 - lite_xlstm
 - ccg_xlstm
+- vmd_ccg_xlstm
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from .lstm import LSTMForecaster
 from .persistence import PersistenceForecaster
 from .tcn import TCNForecaster
 from .transformer import TransformerForecaster
-from .xlstm import CCGXLSTMForecaster, LiteXLSTMForecaster
+from .xlstm import CCGXLSTMForecaster, LiteXLSTMForecaster, VMDCCGXLSTMForecaster
 
 
 def build_model_from_config(model_cfg: dict[str, Any]) -> Any:
@@ -95,6 +96,23 @@ def build_model_from_config(model_cfg: dict[str, Any]) -> Any:
             dropout=float(model_cfg.get("dropout", 0.1)),
             gate_clip=float(model_cfg.get("gate_clip", 5.0)),
         )
+    if name == "vmd_ccg_xlstm":
+        return VMDCCGXLSTMForecaster(
+            state_dim=int(model_cfg.get("state_dim", 5)),
+            exog_dim=int(model_cfg.get("exog_dim", 6)),
+            d_model=int(model_cfg.get("d_model", 128)),
+            num_layers=int(model_cfg.get("num_layers", 2)),
+            pred_len=int(model_cfg["pred_len"]),
+            target_dim=int(model_cfg["target_dim"]),
+            K=int(model_cfg.get("K", 3)),
+            context_dim=int(model_cfg.get("context_dim", 64)),
+            dropout=float(model_cfg.get("dropout", 0.1)),
+            gate_clip=float(model_cfg.get("gate_clip", 5.0)),
+            decode_type=str(model_cfg.get("decode_type", "delta")),
+            use_state_mixer=bool(model_cfg.get("use_state_mixer", True)),
+            state_mixer_hidden_dim=int(model_cfg.get("state_mixer_hidden_dim", 16)),
+            state_mixer_dropout=float(model_cfg.get("state_mixer_dropout", 0.0)),
+        )
     raise ValueError(f"Unsupported model name: {name!r}")
 
 
@@ -106,5 +124,6 @@ __all__ = [
     "TransformerForecaster",
     "LiteXLSTMForecaster",
     "CCGXLSTMForecaster",
+    "VMDCCGXLSTMForecaster",
     "build_model_from_config",
 ]

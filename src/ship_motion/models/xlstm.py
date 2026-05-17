@@ -16,6 +16,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from .decoders import DeltaDecoder
+from .state_mixer import StateCouplingMixer
+from .vmd_heads import VMDMultiHead
+
 
 class ForecastHead(nn.Module):
     """把时序编码结果映射成未来多步状态预测。"""
@@ -328,3 +332,82 @@ class CCGXLSTMForecaster(nn.Module):
         _, feature = self.encode(x, batch=batch)
         return self.head(feature)
 
+
+class VMDCCGXLSTMForecaster(nn.Module):
+    """Step 05：VMD-CCG-xLSTM 集成模型。
+
+    流程：
+    CCG backbone encode
+      -> VMD 多模态预测头
+      -> 按模态求和得到基础预测
+      -> Delta Decoder（可选 direct / delta）
+      -> State Coupling Mixer（可选）
+    """
+
+    def __init__(
+        self,
+        state_dim: int,
+        exog_dim: int,
+        d_model: int,
+        num_layers: int,
+        pred_len: int,
+        target_dim: int,
+        K: int,
+        context_dim: int = 64,
+        dropout: float = 0.1,
+        gate_clip: float = 5.0,
+        decode_type: str = "delta",
+        use_state_mixer: bool = True,
+        state_mixer_hidden_dim: int = 16,
+        state_mixer_dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.target_dim = target_dim
+        self.backbone = CCGXLSTMForecaster(
+            state_dim=state_dim,
+            exog_dim=exog_dim,
+            d_model=d_model,
+            num_layers=num_layers,
+            pred_len=pred_len,
+            target_dim=target_dim,
+            context_dim=context_dim,
+            dropout=dropout,
+            gate_clip=gate_clip,
+        )
+        self.vmd_head = VMDMultiHead(
+            d_model=d_model,
+            pred_len=pred_len,
+            target_dim=target_dim,
+            K=K,
+            dropout=dropout,
+        )
+        self.decoder = DeltaDecoder(mode=decode_type)
+        self.use_state_mixer = bool(use_state_mixer)
+        self.state_mixer = (
+            StateCouplingMixer(
+                target_dim=target_dim,
+                hidden_dim=state_mixer_hidden_dim,
+                dropout=state_mixer_dropout,
+            )
+            if self.use_state_mixer
+            else nn.Identity()
+        )
+
+    def _resolve_last_state_std(self, x: torch.Tensor, batch: dict | None) -> torch.Tensor:
+        """获取标准化空间中的历史最后状态，供 delta 解码使用。"""
+        if batch is not None and "x_state" in batch:
+            return batch["x_state"][:, -1, :]
+        return x[:, -1, -self.target_dim :]
+
+    def forward(self, x: torch.Tensor, batch: dict | None = None) -> dict[str, torch.Tensor]:
+        hidden_seq, feature = self.backbone.encode(x, batch=batch)
+        mode_preds = self.vmd_head(feature)
+        y_base = mode_preds.sum(dim=-1)
+        last_state_std = self._resolve_last_state_std(x, batch)
+        y_hat = self.decoder(y_base, last_state_std=last_state_std)
+        y_hat = self.state_mixer(y_hat)
+        return {
+            "y_hat": y_hat,
+            "mode_preds": mode_preds,
+            "hidden_seq": hidden_seq,
+        }

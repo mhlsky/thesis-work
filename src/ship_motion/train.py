@@ -16,8 +16,10 @@ from torch.utils.data import DataLoader
 
 from ship_motion.data.dataset import DEFAULT_CONFIG_PATH, build_datasets
 from ship_motion.evaluate import (
+    apply_vmd_smoke_overrides,
     build_loaders,
     build_runtime_model_config,
+    compute_model_losses,
     default_run_dir,
     evaluate_model,
     move_batch_to_device,
@@ -38,6 +40,8 @@ def train_one_epoch(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    y_std: Sequence[float] | None = None,
+    lambda_vmd: float = 0.0,
     grad_clip: float | None = None,
     max_steps: int | None = None,
 ) -> float:
@@ -51,8 +55,14 @@ def train_one_epoch(
             break
         batch = move_batch_to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
-        y_hat = model(batch["x"], batch=batch)
-        loss = criterion(y_hat, batch["y"])
+        output = model(batch["x"], batch=batch)
+        _, loss, _, _ = compute_model_losses(
+            model_output=output,
+            batch=batch,
+            criterion=criterion,
+            y_std=y_std,
+            lambda_vmd=lambda_vmd,
+        )
         loss.backward()
 
         # 梯度裁剪对 RNN 类模型尤其有帮助，可以降低梯度爆炸风险。
@@ -73,6 +83,7 @@ def validate(
     scaler: Any,
     target_cols: Sequence[str],
     device: torch.device,
+    lambda_vmd: float = 0.0,
     max_steps: int | None = None,
 ) -> tuple[dict[str, float], float]:
     """验证集评估，指标在真实物理尺度上计算。"""
@@ -82,6 +93,7 @@ def validate(
         scaler=scaler,
         target_cols=target_cols,
         device=device,
+        lambda_vmd=lambda_vmd,
         max_steps=max_steps,
     )
 
@@ -112,6 +124,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     model = build_model(runtime_config).to(device)
     optimizer = build_optimizer(model, train_cfg)
     max_eval_steps = train_cfg.get("max_eval_steps")
+    lambda_vmd = float(runtime_config.get("vmd", {}).get("lambda_vmd", 0.0))
 
     # Persistence 没有可训练参数，会走这个分支：
     # 不训练，只直接评估并输出统一格式文件。
@@ -122,6 +135,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             scaler=bundle["scaler"],
             target_cols=data_cfg["target_cols"],
             device=device,
+            lambda_vmd=lambda_vmd,
             max_steps=max_eval_steps,
         )
         save_checkpoint(run_dir / "best.pt", model, runtime_config, best_metric=val_metrics["rmse_mean"], epoch=0)
@@ -166,6 +180,8 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             loader=loaders["train"],
             optimizer=optimizer,
             device=device,
+            y_std=bundle["scaler"].y_std,
+            lambda_vmd=lambda_vmd,
             grad_clip=float(grad_clip) if grad_clip is not None else None,
             max_steps=max_train_steps,
         )
@@ -175,6 +191,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             scaler=bundle["scaler"],
             target_cols=data_cfg["target_cols"],
             device=device,
+            lambda_vmd=lambda_vmd,
             max_steps=max_eval_steps,
         )
         elapsed = time.perf_counter() - start_time
@@ -246,6 +263,7 @@ def finalize_and_evaluate(
             scaler=bundle["scaler"],
             target_cols=data_cfg["target_cols"],
             device=device,
+            lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
             max_steps=max_eval_steps,
         )
         save_json(metrics, run_dir / f"metrics_{split}.json")
@@ -324,6 +342,7 @@ def apply_smoke_overrides(config: dict[str, Any]) -> None:
     train_cfg["num_workers"] = 0
     train_cfg["max_train_steps_per_epoch"] = 2
     train_cfg["max_eval_steps"] = 2
+    apply_vmd_smoke_overrides(config)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

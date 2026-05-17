@@ -12,6 +12,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from ship_motion.data.dataset import DEFAULT_CONFIG_PATH, build_datasets
+from ship_motion.losses.vmd_loss import standardize_y_modes, vmd_aux_loss
 from ship_motion.metrics import compute_metrics
 from ship_motion.models import build_model_from_config
 from ship_motion.utils import ensure_dir, load_yaml, save_json, set_seed
@@ -23,6 +24,7 @@ def evaluate_model(
     scaler: Any,
     target_cols: Sequence[str],
     device: torch.device,
+    lambda_vmd: float = 0.0,
     max_steps: int | None = None,
 ) -> tuple[dict[str, float], float]:
     """返回反标准化指标和标准化空间平均 MSE。"""
@@ -37,8 +39,14 @@ def evaluate_model(
             if max_steps is not None and step >= max_steps:
                 break
             batch = move_batch_to_device(batch, device)
-            y_hat = model(batch["x"], batch=batch)
-            loss = criterion(y_hat, batch["y"])
+            output = model(batch["x"], batch=batch)
+            y_hat, loss, _, _ = compute_model_losses(
+                model_output=output,
+                batch=batch,
+                criterion=criterion,
+                y_std=scaler.y_std,
+                lambda_vmd=lambda_vmd,
+            )
             losses.append(float(loss.item()))
 
             # 预测需要先反标准化后再统计最终指标；
@@ -56,6 +64,46 @@ def evaluate_model(
     metrics["num_forecast_steps"] = int(y_pred_raw.shape[1])
     metrics["loss_mse_std"] = float(sum(losses) / len(losses))
     return metrics, float(sum(losses) / len(losses))
+
+
+def extract_y_hat(model_output: Any) -> torch.Tensor:
+    """统一兼容 Tensor 输出和 dict 输出。"""
+    if isinstance(model_output, dict):
+        if "y_hat" not in model_output:
+            raise KeyError("Model output dict must contain key 'y_hat'.")
+        return model_output["y_hat"]
+    return model_output
+
+
+def compute_model_losses(
+    model_output: Any,
+    batch: dict[str, Any],
+    criterion: torch.nn.Module,
+    y_std: Sequence[float] | None = None,
+    lambda_vmd: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """统一计算主预测损失和可选的 VMD 辅助损失。"""
+    y_hat = extract_y_hat(model_output)
+    pred_loss = criterion(y_hat, batch["y"])
+    total_loss = pred_loss
+    aux_loss: torch.Tensor | None = None
+
+    if (
+        isinstance(model_output, dict)
+        and "mode_preds" in model_output
+        and "y_modes" in batch
+        and y_std is not None
+        and lambda_vmd > 0
+    ):
+        y_modes_std = standardize_y_modes(
+            batch["y_modes"],
+            y_std=y_std,
+            reference_tensor=model_output["mode_preds"],
+        )
+        aux_loss = vmd_aux_loss(model_output["mode_preds"], y_modes_std)
+        total_loss = total_loss + lambda_vmd * aux_loss
+
+    return y_hat, total_loss, pred_loss, aux_loss
 
 
 def move_batch_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
@@ -76,6 +124,7 @@ def evaluate_splits(
     target_cols: Sequence[str],
     device: torch.device,
     split_names: Iterable[str],
+    lambda_vmd: float = 0.0,
     max_steps: int | None = None,
 ) -> dict[str, dict[str, float]]:
     """按 split 逐个评估。"""
@@ -87,6 +136,7 @@ def evaluate_splits(
             scaler=scaler,
             target_cols=target_cols,
             device=device,
+            lambda_vmd=lambda_vmd,
             max_steps=max_steps,
         )
         results[split] = metrics
@@ -128,6 +178,8 @@ def build_runtime_model_config(config: dict[str, Any]) -> dict[str, Any]:
     model_cfg.setdefault("target_dim", len(data_cfg.get("target_cols", [])))
     model_cfg.setdefault("exog_dim", len(data_cfg.get("exog_cols", [])))
     model_cfg.setdefault("state_dim", len(data_cfg.get("state_cols", [])))
+    if "vmd" in config and "K" in config.get("vmd", {}):
+        model_cfg.setdefault("K", int(config["vmd"]["K"]))
     model_cfg["pred_len"] = int(data_cfg["pred_len"])
     return model_cfg
 
@@ -180,6 +232,7 @@ def evaluate_from_config(
         target_cols=config["data"]["target_cols"],
         device=device,
         split_names=split_names,
+        lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
         max_steps=train_cfg.get("max_eval_steps"),
     )
 
@@ -201,6 +254,18 @@ def apply_smoke_overrides(config: dict[str, Any]) -> None:
     train_cfg["batch_size"] = min(int(train_cfg.get("batch_size", 8)), 8)
     train_cfg["num_workers"] = 0
     train_cfg["max_eval_steps"] = 2
+    apply_vmd_smoke_overrides(config)
+
+
+def apply_vmd_smoke_overrides(config: dict[str, Any]) -> None:
+    """把 VMD 缓存路径指向 smoke 目录，避免要求正式全量缓存。"""
+    vmd_cfg = config.get("vmd")
+    if not isinstance(vmd_cfg, dict) or not bool(vmd_cfg.get("enabled", False)):
+        return
+    alpha = float(vmd_cfg.get("alpha", 2000.0))
+    alpha_str = f"{alpha:g}".replace(".", "_")
+    cache_dir_name = f"K{int(vmd_cfg.get('K', 3))}_alpha{alpha_str}"
+    vmd_cfg["cache_root"] = f"outputs/cache/vmd_smoke/{cache_dir_name}"
 
 
 def main(argv: Sequence[str] | None = None) -> None:

@@ -1,6 +1,6 @@
-# Step 03/05 预留配置：VMD-CCG-xLSTM。
-# 当前步骤主要使用其中的 `data` 与 `vmd` 字段来构建 VMD 标签缓存；
-# 真正的 xLSTM 主干与训练集成会在后续步骤实现。
+# Step 05：VMD-CCG-xLSTM 配置。
+# 目标：把 CCG-xLSTM backbone、VMD 多模态辅助监督、Delta Decoder、
+# State Coupling Mixer 串成第一个较完整的主线模型。
 
 data:
   # 四个数据划分目录沿用基础实验设置。
@@ -12,10 +12,10 @@ data:
   # 外生控制/环境量。
   exog_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y]
 
-  # 船舶状态量，也是后续 VMD 分解目标。
+  # 船舶状态量，也是后续 VMD 分解目标与未来预测目标。
   state_cols: [u, v, p, r, phi]
 
-  # 模型历史输入列。
+  # 模型历史输入列：外生量 + 状态量。
   input_cols: [n, deltal, deltar, Vw, alpha_x, alpha_y, u, v, p, r, phi]
 
   # 未来预测目标列。
@@ -31,7 +31,6 @@ data:
   max_windows_per_file: null
 
 train:
-  # 当前步骤还不正式训练，但保留这些字段，方便后续步骤直接复用。
   seed: 42
   batch_size: 128
   epochs: 50
@@ -45,7 +44,7 @@ train:
   max_eval_steps: null
 
 vmd:
-  # Step 03 必做模块开关。关闭后 Dataset 会回退到原有无 VMD 流程。
+  # 开启 VMD 后，Dataset 会额外返回 y_modes 作为辅助监督标签。
   enabled: true
 
   # VMD 模态数，默认拆成趋势 / 周期 / 扰动三类。
@@ -66,21 +65,44 @@ vmd:
   # VMD 迭代停止阈值，越小越严格。
   tol: 1.0e-7
 
-  # 后续训练时 VMD 辅助损失的权重。
+  # VMD 辅助损失权重：总损失 = 预测 MSE + lambda_vmd * VMD MSE
   lambda_vmd: 0.2
 
-  # VMD 缓存根目录。
-  # 程序会在下面自动创建 train / validation / routine_test / ood_test 子目录。
+  # VMD 缓存根目录。程序会在下面自动创建 train / validation / routine_test / ood_test 子目录。
   cache_root: outputs/cache/vmd/K3_alpha2000
 
 output_dir: outputs
 run_name: vmd_ccg_xlstm_seq128_pred10
 
 model:
-  # Step 05 之前这里只作为配置骨架占位。
   name: vmd_ccg_xlstm
-  input_dim: 11
+
+  # 输入由 6 维外生量和 5 维状态量组成。
+  exog_dim: 6
+  state_dim: 5
   target_dim: 5
-  hidden_dim: 128
+
+  # backbone 隐藏宽度。
+  d_model: 128
+
+  # 外生量 MLP 上下文宽度。
+  context_dim: 64
+
+  # 堆叠多少层 CCG xLSTM block。
   num_layers: 2
   dropout: 0.1
+
+  # exp 门控前的裁剪范围。
+  gate_clip: 5.0
+
+  # delta：预测增量后累计；direct：直接预测未来状态。
+  decode_type: delta
+
+  # 是否使用状态耦合修正。
+  use_state_mixer: true
+
+  # 状态耦合 MLP 的隐藏宽度。
+  state_mixer_hidden_dim: 16
+
+  # 状态耦合 MLP 的 dropout。
+  state_mixer_dropout: 0.0
