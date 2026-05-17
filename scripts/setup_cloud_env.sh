@@ -11,13 +11,50 @@ set -euo pipefail
 
 PROJECT_ROOT="${1:-$PWD}"
 cd "$PROJECT_ROOT"
+SETUP_START_TS=$(date +%s)
 
-echo "==> System info"
-uname -a
+format_duration() {
+  local total_seconds="${1:-0}"
+  local hours=$((total_seconds / 3600))
+  local minutes=$(((total_seconds % 3600) / 60))
+  local seconds=$((total_seconds % 60))
+  printf "%02d:%02d:%02d" "$hours" "$minutes" "$seconds"
+}
 
-echo "==> Python version"
-python3 --version || true
+print_banner() {
+  local message="$1"
+  echo "================================================================================"
+  echo "$message"
+  echo "================================================================================"
+}
 
+print_stage() {
+  local stage_name="$1"
+  echo
+  echo "--------------------------------------------------------------------------------"
+  echo "[Stage] $stage_name"
+  echo "--------------------------------------------------------------------------------"
+}
+
+run_check() {
+  local name="$1"
+  shift
+  local task_start_ts
+  task_start_ts=$(date +%s)
+  print_banner "[Task Start] name=$name | started_at=$(date '+%F %T')"
+  "$@"
+  local task_end_ts
+  task_end_ts=$(date +%s)
+  print_banner "[Task Done] name=$name | elapsed=$(format_duration "$((task_end_ts - task_start_ts))")"
+}
+
+print_banner "[Run Start] Linux cloud environment setup | project_root=$PROJECT_ROOT"
+
+print_stage "System information"
+run_check "system_info" uname -a
+run_check "python_version" bash -lc 'python3 --version || true'
+
+print_stage "Install and verify uv"
 echo "==> Installing uv if needed"
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -25,16 +62,15 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 echo "==> uv version"
-uv --version
+run_check "uv_version" uv --version
 
 echo "==> Syncing dependencies"
-uv sync
+run_check "uv_sync" uv sync
 
-echo "==> Checking GPU"
-nvidia-smi || echo "WARNING: nvidia-smi not found. If you expected GPU, please check the cloud runtime."
+print_stage "Check GPU and Torch CUDA"
+bash -lc 'nvidia-smi || echo "WARNING: nvidia-smi not found. If you expected GPU, please check the cloud runtime."'
 
-echo "==> Checking torch CUDA"
-uv run python - <<'PY'
+run_check "torch_cuda_check" uv run python - <<'PY'
 import torch
 print("torch:", torch.__version__)
 print("cuda_available:", torch.cuda.is_available())
@@ -43,19 +79,18 @@ if torch.cuda.is_available():
     print("device_name:", torch.cuda.get_device_name(0))
 PY
 
-echo "==> Checking required data directories"
-test -d data/patrol_ship_routine/processed/train
-test -d data/patrol_ship_routine/processed/validation
-test -d data/patrol_ship_routine/processed/test
-test -d data/patrol_ship_ood/processed/test
+print_stage "Check data and directories"
+run_check "check_train_dir" test -d data/patrol_ship_routine/processed/train
+run_check "check_val_dir" test -d data/patrol_ship_routine/processed/validation
+run_check "check_routine_test_dir" test -d data/patrol_ship_routine/processed/test
+run_check "check_ood_test_dir" test -d data/patrol_ship_ood/processed/test
 
-echo "==> Ensuring output/log directories"
-mkdir -p outputs
-mkdir -p logs
+run_check "prepare_output_dirs" mkdir -p outputs logs
 
-echo "==> Running smoke checks"
-uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke
-uv run python -m ship_motion.train --config configs/lstm.yaml --smoke
-uv run python -m ship_motion.data.vmd --config configs/vmd_ccg_xlstm.yaml --smoke
+print_stage "Run smoke checks"
+run_check "smoke_dataset" uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke
+run_check "smoke_train_lstm" uv run python -m ship_motion.train --config configs/lstm.yaml --smoke
+run_check "smoke_vmd" uv run python -m ship_motion.data.vmd --config configs/vmd_ccg_xlstm.yaml --smoke
 
-echo "==> Cloud environment setup finished"
+SETUP_END_TS=$(date +%s)
+print_banner "[Run Done] Linux cloud environment setup finished | total_elapsed=$(format_duration "$((SETUP_END_TS - SETUP_START_TS))")"

@@ -10,6 +10,7 @@ dependencies = [
     "PyYAML>=6.0",
     "scikit-learn>=1.5",
     "torch>=2.4",
+    "tqdm>=4.66",
     "vmdpy>=0.2",
 ]
 

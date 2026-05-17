@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from ship_motion.data.dataset import DEFAULT_CONFIG_PATH, build_datasets
 from ship_motion.losses.physics import physics_loss
@@ -18,6 +20,24 @@ from ship_motion.losses.vmd_loss import standardize_y_modes, vmd_aux_loss
 from ship_motion.metrics import compute_metrics, roll_consistency_rmse, smoothness_metric
 from ship_motion.models import build_model_from_config
 from ship_motion.utils import ensure_dir, load_yaml, save_json, set_seed
+
+
+def resolve_progress_total(loader: DataLoader, max_steps: int | None = None) -> int | None:
+    """推导进度条总步数；如果无法安全获取长度，则返回 None。"""
+    try:
+        total_steps = len(loader)
+    except TypeError:
+        total_steps = None
+    if total_steps is None:
+        return max_steps
+    if max_steps is None:
+        return total_steps
+    return min(total_steps, max_steps)
+
+
+def progress_is_interactive() -> bool:
+    """判断当前是否适合显示 tqdm 动态进度条。"""
+    return bool(getattr(sys.stderr, "isatty", lambda: False)())
 
 
 def evaluate_model(
@@ -29,6 +49,8 @@ def evaluate_model(
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    show_progress: bool = False,
+    progress_desc: str | None = None,
 ) -> tuple[dict[str, float], float]:
     """返回反标准化指标和标准化空间平均 MSE。"""
     metrics, loss_value, _ = evaluate_model_with_predictions(
@@ -41,6 +63,8 @@ def evaluate_model(
         physics_cfg=physics_cfg,
         max_steps=max_steps,
         collect_predictions=False,
+        show_progress=show_progress,
+        progress_desc=progress_desc,
     )
     return metrics, loss_value
 
@@ -55,6 +79,8 @@ def evaluate_model_with_predictions(
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
     collect_predictions: bool = True,
+    show_progress: bool = False,
+    progress_desc: str | None = None,
 ) -> tuple[dict[str, float], float, dict[str, np.ndarray] | None]:
     """评估模型，并可选收集预测结果用于后续绘图。"""
     criterion = torch.nn.MSELoss()
@@ -63,10 +89,14 @@ def evaluate_model_with_predictions(
     preds: list[torch.Tensor] = []
     trues: list[torch.Tensor] = []
     last_states: list[torch.Tensor] = []
+    total_steps = resolve_progress_total(loader, max_steps=max_steps)
+    progress_desc = progress_desc or "eval"
+    use_tqdm = show_progress and progress_is_interactive()
 
     with torch.no_grad():
-        for step, batch in enumerate(loader):
-            if max_steps is not None and step >= max_steps:
+        progress_bar = tqdm(total=total_steps, desc=progress_desc, dynamic_ncols=True, leave=False) if use_tqdm else None
+        for step, batch in enumerate(loader, start=1):
+            if max_steps is not None and step > max_steps:
                 break
             batch = move_batch_to_device(batch, device)
             output = model(batch["x"], batch=batch)
@@ -80,12 +110,21 @@ def evaluate_model_with_predictions(
                 physics_cfg=physics_cfg,
             )
             losses.append(float(loss.item()))
+            avg_loss = float(sum(losses) / len(losses))
+            if progress_bar is not None:
+                progress_bar.update(1)
+                progress_bar.set_postfix(loss=f"{loss.item():.4f}", avg=f"{avg_loss:.4f}")
+            elif show_progress and (step == 1 or step % 10 == 0 or step == total_steps):
+                total_hint = total_steps if total_steps is not None else "?"
+                print(f"[Eval] {progress_desc} step {step}/{total_hint} loss={loss.item():.4f} avg={avg_loss:.4f}")
 
             # 预测需要先反标准化后再统计最终指标；
             # 真实标签直接使用数据集已经提供好的 y_raw。
             preds.append(scaler.inverse_y_tensor(y_hat).detach().cpu())
             trues.append(batch["y_raw"].detach().cpu())
             last_states.append(batch["last_state_raw"].detach().cpu())
+        if progress_bar is not None:
+            progress_bar.close()
 
     if not preds:
         raise ValueError("Evaluation loader produced no batches.")
@@ -189,6 +228,7 @@ def evaluate_splits(
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    show_progress: bool = False,
 ) -> dict[str, dict[str, float]]:
     """按 split 逐个评估。"""
     results: dict[str, dict[str, float]] = {}
@@ -202,6 +242,8 @@ def evaluate_splits(
             lambda_vmd=lambda_vmd,
             physics_cfg=physics_cfg,
             max_steps=max_steps,
+            show_progress=show_progress,
+            progress_desc=f"eval[{split}]",
         )
         results[split] = metrics
     return results
@@ -312,6 +354,8 @@ def evaluate_from_config(
             physics_cfg=physics_cfg,
             max_steps=train_cfg.get("max_eval_steps"),
             collect_predictions=save_predictions,
+            show_progress=True,
+            progress_desc=f"eval[{split_name}]",
         )
         results[split_name] = metrics
         if save_predictions and payload is not None:

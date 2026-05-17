@@ -13,6 +13,7 @@ import torch
 import yaml
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from ship_motion.data.dataset import DEFAULT_CONFIG_PATH, build_datasets
 from ship_motion.evaluate import (
@@ -24,6 +25,8 @@ from ship_motion.evaluate import (
     evaluate_model,
     evaluate_model_with_predictions,
     move_batch_to_device,
+    progress_is_interactive,
+    resolve_progress_total,
     resolve_device,
     save_predictions_npz,
 )
@@ -37,6 +40,16 @@ def build_model(config: dict[str, Any]) -> nn.Module:
     return build_model_from_config(model_cfg)
 
 
+def format_duration(seconds: float) -> str:
+    """把秒数格式化成适合终端阅读的时长字符串。"""
+    total_seconds = max(int(round(seconds)), 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -48,14 +61,24 @@ def train_one_epoch(
     physics_cfg: dict[str, Any] | None = None,
     grad_clip: float | None = None,
     max_steps: int | None = None,
+    epoch: int | None = None,
+    total_epochs: int | None = None,
+    show_progress: bool = True,
 ) -> float:
     """执行一个 epoch 的标准化空间 MSE 训练。"""
     criterion = nn.MSELoss()
     model.train()
     losses: list[float] = []
+    total_steps = resolve_progress_total(loader, max_steps=max_steps)
+    if epoch is not None and total_epochs is not None:
+        progress_desc = f"train[{epoch}/{total_epochs}]"
+    else:
+        progress_desc = "train"
+    use_tqdm = show_progress and progress_is_interactive()
+    progress_bar = tqdm(total=total_steps, desc=progress_desc, dynamic_ncols=True, leave=False) if use_tqdm else None
 
-    for step, batch in enumerate(loader):
-        if max_steps is not None and step >= max_steps:
+    for step, batch in enumerate(loader, start=1):
+        if max_steps is not None and step > max_steps:
             break
         batch = move_batch_to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
@@ -77,6 +100,17 @@ def train_one_epoch(
 
         optimizer.step()
         losses.append(float(loss.item()))
+        avg_loss = float(sum(losses) / len(losses))
+        if progress_bar is not None:
+            progress_bar.update(1)
+            progress_bar.set_postfix(loss=f"{loss.item():.4f}", avg=f"{avg_loss:.4f}")
+        elif show_progress and (step == 1 or step % 10 == 0 or step == total_steps):
+            total_hint = total_steps if total_steps is not None else "?"
+            epoch_hint = f"[{epoch}/{total_epochs}] " if epoch is not None and total_epochs is not None else ""
+            print(f"[Train] {epoch_hint}step {step}/{total_hint} loss={loss.item():.4f} avg={avg_loss:.4f}")
+
+    if progress_bar is not None:
+        progress_bar.close()
 
     if not losses:
         raise ValueError("Training loader produced no batches.")
@@ -92,6 +126,8 @@ def validate(
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    show_progress: bool = False,
+    progress_desc: str | None = None,
 ) -> tuple[dict[str, float], float]:
     """验证集评估，指标在真实物理尺度上计算。"""
     return evaluate_model(
@@ -103,6 +139,8 @@ def validate(
         lambda_vmd=lambda_vmd,
         physics_cfg=physics_cfg,
         max_steps=max_steps,
+        show_progress=show_progress,
+        progress_desc=progress_desc,
     )
 
 
@@ -134,10 +172,26 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     max_eval_steps = train_cfg.get("max_eval_steps")
     lambda_vmd = float(runtime_config.get("vmd", {}).get("lambda_vmd", 0.0))
     physics_cfg = runtime_config.get("physics", {})
+    run_name = str(runtime_config.get("run_name", "run"))
+    model_name = str(runtime_config.get("model", {}).get("name", "unknown_model"))
+    device_label = str(device)
+    total_train_start = time.perf_counter()
+    print("=" * 80)
+    print(
+        f"[Run Start] model={model_name} | run={run_name} | smoke={smoke} | "
+        f"device={device_label} | output={run_dir}"
+    )
+    print(
+        f"[Run Start] batch_size={int(train_cfg.get('batch_size', 128))} | "
+        f"epochs={int(train_cfg.get('epochs', 1))} | "
+        f"train_windows={len(bundle['train'])} | val_windows={len(bundle['val'])}"
+    )
+    print("=" * 80)
 
     # Persistence 没有可训练参数，会走这个分支：
     # 不训练，只直接评估并输出统一格式文件。
     if optimizer is None:
+        print("[Train] 当前模型无可训练参数，直接进入评估流程。")
         val_metrics, val_loss = validate(
             model=model,
             loader=loaders["val"],
@@ -147,6 +201,8 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             lambda_vmd=lambda_vmd,
             physics_cfg=physics_cfg,
             max_steps=max_eval_steps,
+            show_progress=True,
+            progress_desc="eval[val]",
         )
         save_checkpoint(run_dir / "best.pt", model, runtime_config, best_metric=val_metrics["rmse_mean"], epoch=0)
         write_train_log(
@@ -171,6 +227,10 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
         )
         all_metrics["best_epoch"] = 0
         all_metrics["best_val_rmse_mean"] = val_metrics["rmse_mean"]
+        print(
+            f"[Run Done] model={model_name} | run={run_name} | "
+            f"total_elapsed={format_duration(time.perf_counter() - total_train_start)}"
+        )
         return all_metrics
 
     history: list[dict[str, float]] = []
@@ -185,6 +245,11 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
 
     for epoch in range(1, epochs + 1):
         start_time = time.perf_counter()
+        train_steps = resolve_progress_total(loaders["train"], max_steps=max_train_steps)
+        print(
+            f"[Train] epoch {epoch}/{epochs} started | model={model_name} | "
+            f"run={run_name} | steps={train_steps if train_steps is not None else '?'} | device={device_label}"
+        )
         train_loss = train_one_epoch(
             model=model,
             loader=loaders["train"],
@@ -196,7 +261,12 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             physics_cfg=physics_cfg,
             grad_clip=float(grad_clip) if grad_clip is not None else None,
             max_steps=max_train_steps,
+            epoch=epoch,
+            total_epochs=epochs,
+            show_progress=True,
         )
+        val_steps = resolve_progress_total(loaders["val"], max_steps=max_eval_steps)
+        print(f"[Eval] validating epoch {epoch}/{epochs} | steps={val_steps if val_steps is not None else '?'}")
         val_metrics, val_loss = validate(
             model=model,
             loader=loaders["val"],
@@ -206,6 +276,8 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             lambda_vmd=lambda_vmd,
             physics_cfg=physics_cfg,
             max_steps=max_eval_steps,
+            show_progress=True,
+            progress_desc="eval[val]",
         )
         elapsed = time.perf_counter() - start_time
         history.append(
@@ -217,9 +289,13 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
                 "elapsed_sec": elapsed,
             }
         )
+        avg_epoch_time = float(sum(item["elapsed_sec"] for item in history) / len(history))
+        remaining_epochs = max(epochs - epoch, 0)
+        eta_text = format_duration(avg_epoch_time * remaining_epochs)
         print(
-            f"epoch={epoch} train_loss={train_loss:.6f} "
-            f"val_loss={val_loss:.6f} val_rmse_mean={val_metrics['rmse_mean']:.6f}"
+            f"[Epoch Summary] epoch={epoch} train_loss={train_loss:.6f} "
+            f"val_loss={val_loss:.6f} val_rmse_mean={val_metrics['rmse_mean']:.6f} "
+            f"elapsed={format_duration(elapsed)} eta={eta_text}"
         )
 
         # Step 02 的早停依据是 val_rmse_mean，越低越好。
@@ -238,7 +314,10 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
         else:
             stale_epochs += 1
             if stale_epochs >= patience:
-                print(f"Early stopping triggered at epoch {epoch}.")
+                print(
+                    f"[Train] Early stopping triggered at epoch {epoch}. "
+                    f"best_epoch={best_epoch} best_val_rmse_mean={best_val_rmse:.6f}"
+                )
                 break
 
     # 评估前先恢复最佳权重，而不是最后一轮权重。
@@ -254,6 +333,13 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     )
     all_metrics["best_epoch"] = best_epoch
     all_metrics["best_val_rmse_mean"] = best_val_rmse
+    print("=" * 80)
+    print(
+        f"[Run Done] model={model_name} | run={run_name} | best_epoch={best_epoch} | "
+        f"best_val_rmse_mean={best_val_rmse:.6f} | "
+        f"total_elapsed={format_duration(time.perf_counter() - total_train_start)}"
+    )
+    print("=" * 80)
     return all_metrics
 
 
@@ -271,6 +357,10 @@ def finalize_and_evaluate(
     results: dict[str, Any] = {}
     for split in ["val", "routine_test", "ood_test"]:
         collect_predictions = split in {"routine_test", "ood_test"}
+        print(
+            f"[Eval] running split={split} | model={config.get('model', {}).get('name', 'unknown_model')} "
+            f"| run={config.get('run_name', 'run')}"
+        )
         metrics, _, payload = evaluate_model_with_predictions(
             model=model,
             loader=loaders[split],
@@ -281,6 +371,8 @@ def finalize_and_evaluate(
             physics_cfg=config.get("physics", {}),
             max_steps=max_eval_steps,
             collect_predictions=collect_predictions,
+            show_progress=True,
+            progress_desc=f"eval[{split}]",
         )
         save_json(metrics, run_dir / f"metrics_{split}.json")
         if collect_predictions and payload is not None:
