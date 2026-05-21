@@ -24,8 +24,10 @@ from ship_motion.evaluate import (
     default_run_dir,
     evaluate_model,
     evaluate_model_with_predictions,
+    log_runtime_environment,
     move_batch_to_device,
     progress_is_interactive,
+    resolve_loader_settings,
     resolve_progress_total,
     resolve_device,
     save_predictions_npz,
@@ -61,6 +63,7 @@ def train_one_epoch(
     physics_cfg: dict[str, Any] | None = None,
     grad_clip: float | None = None,
     max_steps: int | None = None,
+    non_blocking: bool = False,
     epoch: int | None = None,
     total_epochs: int | None = None,
     show_progress: bool = True,
@@ -80,7 +83,7 @@ def train_one_epoch(
     for step, batch in enumerate(loader, start=1):
         if max_steps is not None and step > max_steps:
             break
-        batch = move_batch_to_device(batch, device)
+        batch = move_batch_to_device(batch, device, non_blocking=non_blocking)
         optimizer.zero_grad(set_to_none=True)
         output = model(batch["x"], batch=batch)
         _, loss, _, _ = compute_model_losses(
@@ -126,6 +129,7 @@ def validate(
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    non_blocking: bool = False,
     show_progress: bool = False,
     progress_desc: str | None = None,
 ) -> tuple[dict[str, float], float]:
@@ -139,6 +143,7 @@ def validate(
         lambda_vmd=lambda_vmd,
         physics_cfg=physics_cfg,
         max_steps=max_steps,
+        non_blocking=non_blocking,
         show_progress=show_progress,
         progress_desc=progress_desc,
     )
@@ -150,9 +155,15 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     if smoke:
         apply_smoke_overrides(runtime_config)
 
-    set_seed(int(runtime_config.get("train", {}).get("seed", 42)))
-    bundle = build_datasets(runtime_config, smoke=False)
     train_cfg = runtime_config.get("train", {})
+    set_seed(int(train_cfg.get("seed", 42)))
+    device = resolve_device(str(train_cfg.get("device", "auto")))
+    repo_root = Path(runtime_config["__config_path__"]).resolve().parent.parent
+    total_train_start = time.perf_counter()
+    log_runtime_environment(device=device, repo_root=repo_root)
+    data_prep_start = time.perf_counter()
+    bundle = build_datasets(runtime_config, smoke=False)
+    data_prep_elapsed = time.perf_counter() - data_prep_start
     data_cfg = runtime_config.get("data", {})
     run_dir = ensure_dir(default_run_dir(runtime_config))
 
@@ -161,12 +172,15 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     save_runtime_config(runtime_config, run_dir / "config.yaml")
     bundle["scaler"].save(run_dir / "scaler.json")
 
+    loader_settings = resolve_loader_settings(train_cfg, device)
     loaders = build_loaders(
         bundle=bundle,
         batch_size=int(train_cfg.get("batch_size", 128)),
-        num_workers=int(train_cfg.get("num_workers", 0)),
+        num_workers=loader_settings["num_workers"],
+        pin_memory=loader_settings["pin_memory"],
+        persistent_workers=loader_settings["persistent_workers"],
+        prefetch_factor=loader_settings["prefetch_factor"],
     )
-    device = resolve_device(str(train_cfg.get("device", "auto")))
     model = build_model(runtime_config).to(device)
     optimizer = build_optimizer(model, train_cfg)
     max_eval_steps = train_cfg.get("max_eval_steps")
@@ -175,16 +189,27 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     run_name = str(runtime_config.get("run_name", "run"))
     model_name = str(runtime_config.get("model", {}).get("name", "unknown_model"))
     device_label = str(device)
-    total_train_start = time.perf_counter()
     print("=" * 80)
     print(
         f"[Run Start] model={model_name} | run={run_name} | smoke={smoke} | "
         f"device={device_label} | output={run_dir}"
     )
     print(
+        f"[Run Start] data_prep_elapsed={format_duration(data_prep_elapsed)} | "
+        f"train_files={len(bundle['train_files'])} | val_files={len(bundle['val_files'])} | "
+        f"routine_test_files={len(bundle['routine_test_files'])} | ood_test_files={len(bundle['ood_test_files'])}"
+    )
+    print(
         f"[Run Start] batch_size={int(train_cfg.get('batch_size', 128))} | "
         f"epochs={int(train_cfg.get('epochs', 1))} | "
         f"train_windows={len(bundle['train'])} | val_windows={len(bundle['val'])}"
+    )
+    print(
+        f"[Run Start] num_workers={loader_settings['num_workers']} | "
+        f"pin_memory={loader_settings['pin_memory']} | "
+        f"persistent_workers={loader_settings['persistent_workers']} | "
+        f"prefetch_factor={loader_settings['prefetch_factor']} | "
+        f"non_blocking={loader_settings['non_blocking']}"
     )
     print("=" * 80)
 
@@ -201,6 +226,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             lambda_vmd=lambda_vmd,
             physics_cfg=physics_cfg,
             max_steps=max_eval_steps,
+            non_blocking=loader_settings["non_blocking"],
             show_progress=True,
             progress_desc="eval[val]",
         )
@@ -261,6 +287,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             physics_cfg=physics_cfg,
             grad_clip=float(grad_clip) if grad_clip is not None else None,
             max_steps=max_train_steps,
+            non_blocking=loader_settings["non_blocking"],
             epoch=epoch,
             total_epochs=epochs,
             show_progress=True,
@@ -276,6 +303,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             lambda_vmd=lambda_vmd,
             physics_cfg=physics_cfg,
             max_steps=max_eval_steps,
+            non_blocking=loader_settings["non_blocking"],
             show_progress=True,
             progress_desc="eval[val]",
         )
@@ -370,6 +398,7 @@ def finalize_and_evaluate(
             lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
             physics_cfg=config.get("physics", {}),
             max_steps=max_eval_steps,
+            non_blocking=resolve_loader_settings(config.get("train", {}), device)["non_blocking"],
             collect_predictions=collect_predictions,
             show_progress=True,
             progress_desc=f"eval[{split}]",
@@ -450,6 +479,10 @@ def apply_smoke_overrides(config: dict[str, Any]) -> None:
     train_cfg["epochs"] = min(int(train_cfg.get("epochs", 1)), 1)
     train_cfg["early_stop_patience"] = 1
     train_cfg["num_workers"] = 0
+    train_cfg["pin_memory"] = False
+    train_cfg["persistent_workers"] = False
+    train_cfg["prefetch_factor"] = None
+    train_cfg["non_blocking"] = False
     train_cfg["max_train_steps_per_epoch"] = 2
     train_cfg["max_eval_steps"] = 2
     apply_vmd_smoke_overrides(config)

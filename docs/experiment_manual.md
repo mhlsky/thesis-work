@@ -1,7 +1,7 @@
 # Step 01~07 实验运行手册
 
 > 这份手册面向第一次接触本项目的同学，目标是把 **Step 01 到 Step 07** 的可运行命令、推荐顺序、输出位置和常见问题讲清楚。  
-> 默认使用 **PowerShell + `uv`**。如果你只想先验证流程是否跑通，请优先使用 **smoke** 命令。
+> 默认情况下：**本地 Windows 开发继续使用 PowerShell + `uv`**；**Linux 云服务器建议先激活你自己的 Python/torch 环境，再直接用 `python` 运行**。如果你只想先验证流程是否跑通，请优先使用 **smoke** 命令。
 
 ---
 
@@ -111,11 +111,18 @@ docs/tmux_cloud_manual.md
 推荐顺序：
 
 ```bash
+conda activate your_env
 bash scripts/setup_cloud_env.sh
 bash scripts/run_full_training.sh
 ```
 
-第一个脚本负责环境初始化与 smoke 检查；  
+说明：
+
+- 请先手动激活你自己的 conda / venv 环境；
+- 该环境需要提前装好 `torch`、`numpy`、`scikit-learn`、`vmdpy`、`matplotlib` 等依赖；
+- 这两个 Linux 脚本现在会**直接复用当前激活环境里的 `python`**，不再默认执行 `uv sync` 或 `uv run`。
+
+第一个脚本负责环境检查与 smoke 检查；  
 第二个脚本负责正式 VMD 缓存、正式训练、predictions 导出、汇总与绘图。
 
 ---

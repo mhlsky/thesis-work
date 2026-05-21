@@ -83,8 +83,25 @@ train:
   early_stop_patience: 8
 
   # DataLoader 等并行读取数据时的工作进程数。
-  # 0 往往表示不额外开子进程，调试时更简单。
-  num_workers: 0
+  # Linux + CUDA 服务器训练时建议大于 0，让 CPU 提前准备 batch。
+  # smoke test 会自动改回 0，避免本地小机器压力过大。
+  num_workers: 4
+
+  # 是否把 batch 先放进 page-locked memory。
+  # auto 表示：当 device 最终解析成 CUDA 时自动开启，加快 CPU -> GPU 拷贝。
+  pin_memory: auto
+
+  # 是否复用 DataLoader worker，避免每个 epoch 反复重建进程。
+  # auto 表示：num_workers > 0 时自动开启。
+  persistent_workers: auto
+
+  # 每个 worker 预取多少个 batch。
+  # 只有 num_workers > 0 时生效；null 表示使用 PyTorch 默认行为。
+  prefetch_factor: 2
+
+  # 是否允许 non_blocking 张量搬运。
+  # auto 表示：CUDA + pin_memory 时自动开启。
+  non_blocking: auto
 
   # 训练设备。
   # auto 表示：有 CUDA 就用 CUDA，没有就自动回退到 CPU。

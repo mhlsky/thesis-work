@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -40,6 +41,100 @@ def progress_is_interactive() -> bool:
     return bool(getattr(sys.stderr, "isatty", lambda: False)())
 
 
+def _parse_bool_flag(value: Any) -> bool:
+    """把配置里的布尔字段安全解析成真正的 bool。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return bool(value)
+
+
+def _resolve_auto_flag(value: Any, auto_value: bool) -> bool:
+    """支持 true / false / auto 三种写法。"""
+    if value is None:
+        return auto_value
+    if isinstance(value, str) and value.strip().lower() == "auto":
+        return auto_value
+    return _parse_bool_flag(value)
+
+
+def resolve_loader_settings(train_cfg: dict[str, Any], device: torch.device) -> dict[str, Any]:
+    """解析 DataLoader 与张量搬运相关设置。"""
+    num_workers = int(train_cfg.get("num_workers", 0))
+    pin_memory = _resolve_auto_flag(train_cfg.get("pin_memory", "auto"), auto_value=device.type == "cuda")
+    persistent_workers = (
+        _resolve_auto_flag(train_cfg.get("persistent_workers", "auto"), auto_value=num_workers > 0)
+        if num_workers > 0
+        else False
+    )
+    raw_prefetch_factor = train_cfg.get("prefetch_factor")
+    prefetch_factor = None if num_workers <= 0 or raw_prefetch_factor is None else int(raw_prefetch_factor)
+    if prefetch_factor is not None and prefetch_factor <= 0:
+        raise ValueError("prefetch_factor must be a positive integer when provided.")
+    non_blocking = _resolve_auto_flag(
+        train_cfg.get("non_blocking", "auto"),
+        auto_value=device.type == "cuda" and pin_memory,
+    )
+    return {
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+        "persistent_workers": persistent_workers,
+        "prefetch_factor": prefetch_factor,
+        "non_blocking": non_blocking,
+    }
+
+
+def log_runtime_environment(device: torch.device, repo_root: Path | None = None) -> None:
+    """打印当前解释器、CUDA 状态和关键环境变量。"""
+    print("=" * 80)
+    print(
+        f"[Env] python={sys.executable} | torch={torch.__version__} | "
+        f"torch_cuda={torch.version.cuda} | device={device}"
+    )
+    print(
+        f"[Env] cuda_available={torch.cuda.is_available()} | "
+        f"cuda_device_count={torch.cuda.device_count()} | "
+        f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<not-set>')}"
+    )
+    if torch.cuda.is_available():
+        current_device = torch.cuda.current_device()
+        print(
+            f"[Env] current_cuda_device={current_device} | "
+            f"cuda_device_name={torch.cuda.get_device_name(current_device)}"
+        )
+    if repo_root is not None:
+        configured_python_path = repo_root / ".python-version"
+        if configured_python_path.exists():
+            configured_python = configured_python_path.read_text(encoding="utf-8").strip()
+            print(f"[Env] configured_python={configured_python}")
+            # `.python-version` 既可能写成解释器绝对路径，也可能只写 `3.11` 这种版本号。
+            # 只有在它看起来像“真实路径”时，才做路径级一致性检查，避免把版本号误判成路径。
+            looks_like_path = any(sep in configured_python for sep in ("/", "\\", ":"))
+            if looks_like_path:
+                try:
+                    expected_python_path = Path(configured_python)
+                    # 如果当前机器根本访问不到这个路径（例如 Windows 本地看到 Linux 的 /root/...），
+                    # 说明这只是“跨机器提示信息”，此时不做不一致告警，避免误导。
+                    if not expected_python_path.exists():
+                        print("[Env] configured_python path is not present on current machine; skip path consistency check.")
+                    else:
+                        current_python = str(Path(sys.executable).resolve())
+                        expected_python = str(expected_python_path.resolve())
+                        if current_python != expected_python:
+                            print(
+                                "[Env Warning] 当前解释器与 .python-version 不一致："
+                                f"current={current_python} | expected={expected_python}"
+                            )
+                except OSError:
+                    print("[Env Warning] 无法解析 .python-version 中的解释器路径，请手动检查。")
+    print("=" * 80)
+
+
 def evaluate_model(
     model: torch.nn.Module,
     loader: DataLoader,
@@ -49,6 +144,7 @@ def evaluate_model(
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    non_blocking: bool = False,
     show_progress: bool = False,
     progress_desc: str | None = None,
 ) -> tuple[dict[str, float], float]:
@@ -62,6 +158,7 @@ def evaluate_model(
         lambda_vmd=lambda_vmd,
         physics_cfg=physics_cfg,
         max_steps=max_steps,
+        non_blocking=non_blocking,
         collect_predictions=False,
         show_progress=show_progress,
         progress_desc=progress_desc,
@@ -78,6 +175,7 @@ def evaluate_model_with_predictions(
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    non_blocking: bool = False,
     collect_predictions: bool = True,
     show_progress: bool = False,
     progress_desc: str | None = None,
@@ -98,7 +196,7 @@ def evaluate_model_with_predictions(
         for step, batch in enumerate(loader, start=1):
             if max_steps is not None and step > max_steps:
                 break
-            batch = move_batch_to_device(batch, device)
+            batch = move_batch_to_device(batch, device, non_blocking=non_blocking)
             output = model(batch["x"], batch=batch)
             y_hat, loss, _, _ = compute_model_losses(
                 model_output=output,
@@ -207,12 +305,16 @@ def compute_model_losses(
     return y_hat, total_loss, pred_loss, aux_loss
 
 
-def move_batch_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
+def move_batch_to_device(
+    batch: dict[str, Any],
+    device: torch.device,
+    non_blocking: bool = False,
+) -> dict[str, Any]:
     """把 batch 中的 Tensor 迁移到指定设备，字符串等元数据保持原样。"""
     moved: dict[str, Any] = {}
     for key, value in batch.items():
         if isinstance(value, torch.Tensor):
-            moved[key] = value.to(device)
+            moved[key] = value.to(device, non_blocking=non_blocking)
         else:
             moved[key] = value
     return moved
@@ -228,6 +330,7 @@ def evaluate_splits(
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    non_blocking: bool = False,
     show_progress: bool = False,
 ) -> dict[str, dict[str, float]]:
     """按 split 逐个评估。"""
@@ -242,6 +345,7 @@ def evaluate_splits(
             lambda_vmd=lambda_vmd,
             physics_cfg=physics_cfg,
             max_steps=max_steps,
+            non_blocking=non_blocking,
             show_progress=show_progress,
             progress_desc=f"eval[{split}]",
         )
@@ -256,15 +360,31 @@ def save_predictions_npz(predictions: dict[str, np.ndarray], path: str | Path) -
     np.savez_compressed(target, **predictions)
 
 
-def build_loaders(bundle: dict[str, Any], batch_size: int, num_workers: int) -> dict[str, DataLoader]:
+def build_loaders(
+    bundle: dict[str, Any],
+    batch_size: int,
+    num_workers: int,
+    pin_memory: bool = False,
+    persistent_workers: bool = False,
+    prefetch_factor: int | None = None,
+) -> dict[str, DataLoader]:
     """构造 train/val/test DataLoader。"""
+    common_kwargs: dict[str, Any] = {
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+    }
+    if num_workers > 0:
+        common_kwargs["persistent_workers"] = persistent_workers
+        if prefetch_factor is not None:
+            common_kwargs["prefetch_factor"] = prefetch_factor
     return {
-        "train": DataLoader(bundle["train"], batch_size=batch_size, shuffle=True, num_workers=num_workers),
-        "val": DataLoader(bundle["val"], batch_size=batch_size, shuffle=False, num_workers=num_workers),
+        "train": DataLoader(bundle["train"], shuffle=True, **common_kwargs),
+        "val": DataLoader(bundle["val"], shuffle=False, **common_kwargs),
         "routine_test": DataLoader(
-            bundle["routine_test"], batch_size=batch_size, shuffle=False, num_workers=num_workers
+            bundle["routine_test"], shuffle=False, **common_kwargs
         ),
-        "ood_test": DataLoader(bundle["ood_test"], batch_size=batch_size, shuffle=False, num_workers=num_workers),
+        "ood_test": DataLoader(bundle["ood_test"], shuffle=False, **common_kwargs),
     }
 
 
@@ -328,13 +448,19 @@ def evaluate_from_config(
         apply_smoke_overrides(config)
 
     set_seed(int(config.get("train", {}).get("seed", 42)))
-    bundle = build_datasets(config, smoke=False)
     train_cfg = config.get("train", {})
     device = resolve_device(str(train_cfg.get("device", "auto")))
+    repo_root = Path(config["__config_path__"]).resolve().parent.parent
+    log_runtime_environment(device=device, repo_root=repo_root)
+    bundle = build_datasets(config, smoke=False)
+    loader_settings = resolve_loader_settings(train_cfg, device)
     loaders = build_loaders(
         bundle=bundle,
         batch_size=int(train_cfg.get("batch_size", 128)),
-        num_workers=int(train_cfg.get("num_workers", 0)),
+        num_workers=loader_settings["num_workers"],
+        pin_memory=loader_settings["pin_memory"],
+        persistent_workers=loader_settings["persistent_workers"],
+        prefetch_factor=loader_settings["prefetch_factor"],
     )
 
     split_names = [split] if split != "all" else ["val", "routine_test", "ood_test"]
@@ -353,6 +479,7 @@ def evaluate_from_config(
             lambda_vmd=lambda_vmd,
             physics_cfg=physics_cfg,
             max_steps=train_cfg.get("max_eval_steps"),
+            non_blocking=loader_settings["non_blocking"],
             collect_predictions=save_predictions,
             show_progress=True,
             progress_desc=f"eval[{split_name}]",
@@ -380,6 +507,10 @@ def apply_smoke_overrides(config: dict[str, Any]) -> None:
     train_cfg = config.setdefault("train", {})
     train_cfg["batch_size"] = min(int(train_cfg.get("batch_size", 8)), 8)
     train_cfg["num_workers"] = 0
+    train_cfg["pin_memory"] = False
+    train_cfg["persistent_workers"] = False
+    train_cfg["prefetch_factor"] = None
+    train_cfg["non_blocking"] = False
     train_cfg["max_eval_steps"] = 2
     apply_vmd_smoke_overrides(config)
 

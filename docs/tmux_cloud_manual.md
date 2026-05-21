@@ -51,11 +51,12 @@ scripts/run_full_training.sh
 推荐做法：
 
 1. 先用 `tmux` 创建一个训练会话；
-2. 在该会话里执行：
+2. 先激活你自己的 conda / venv 环境；
+3. 在该会话里执行：
    - `bash scripts/setup_cloud_env.sh`
    - `bash scripts/run_full_training.sh`
-3. 再开一个 `tmux` 窗口专门看 GPU；
-4. 再开一个窗口专门 `tail -f logs/*.log` 看日志。
+4. 再开一个 `tmux` 窗口专门看 GPU；
+5. 再开一个窗口专门 `tail -f logs/*.log` 看日志。
 
 ---
 
@@ -143,18 +144,22 @@ tmux new -s thesis_train
 进入项目根目录后，先执行：
 
 ```bash
+conda activate your_env
 bash scripts/setup_cloud_env.sh
 ```
+
+如果你不是 conda，而是 venv，请改成你自己的激活方式；核心要求只有一个：
+
+> 进入脚本前，先确保当前 `python` 就是你想复用的那个环境里的 Python。
 
 这个脚本会做：
 
 1. 检查系统与 Python
-2. 安装 / 检查 `uv`
-3. `uv sync`
-4. 检查 GPU
-5. 检查 `torch.cuda.is_available()`
-6. 检查数据目录
-7. 执行最小 smoke：
+2. 检查当前 Python 环境里是否已安装关键依赖
+3. 检查 GPU
+4. 检查 `torch.cuda.is_available()`
+5. 检查数据目录
+6. 执行最小 smoke：
    - Step 01 数据 smoke
    - Step 02 LSTM smoke
    - Step 03 VMD smoke
@@ -181,7 +186,7 @@ bash scripts/run_full_training.sh
 
 这个脚本会顺序执行：
 
-1. `uv sync`
+1. 直接复用当前已激活环境里的 `python`
 2. 构建正式 VMD 缓存
 3. 训练主线模型：
    - LSTM
@@ -409,19 +414,19 @@ tmux attach -t thesis_train
 ### 13.1 只构建 VMD 缓存
 
 ```bash
-uv run python -m ship_motion.data.vmd --config configs/vmd_ccg_phys_xlstm.yaml
+python -m ship_motion.data.vmd --config configs/vmd_ccg_phys_xlstm.yaml
 ```
 
 ### 13.2 只训练最终主模型
 
 ```bash
-uv run python -m ship_motion.train --config configs/vmd_ccg_phys_xlstm.yaml
+python -m ship_motion.train --config configs/vmd_ccg_phys_xlstm.yaml
 ```
 
 ### 13.3 只导出最终主模型 predictions
 
 ```bash
-uv run python -m ship_motion.evaluate \
+python -m ship_motion.evaluate \
   --config configs/vmd_ccg_phys_xlstm.yaml \
   --checkpoint outputs/vmd_ccg_phys_xlstm_seq128_pred10/best.pt \
   --split all \
@@ -431,12 +436,12 @@ uv run python -m ship_motion.evaluate \
 ### 13.4 只做汇总和绘图
 
 ```bash
-uv run python -m ship_motion.summarize_results \
+python -m ship_motion.summarize_results \
   --ablation-config configs/ablation_list.yaml \
   --run-output-root outputs \
   --summary-output-dir outputs/summary
 
-uv run python -m ship_motion.plot_results \
+python -m ship_motion.plot_results \
   --ablation-config configs/ablation_list.yaml \
   --run-output-root outputs \
   --summary-output-dir outputs/summary
