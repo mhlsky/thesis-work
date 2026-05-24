@@ -8,7 +8,8 @@ Step 07 批量评估与预测导出脚本。
 #>
 
 param(
-    [switch]$Smoke
+    [switch]$Smoke,
+    [string]$ResultName = ""
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -27,10 +28,27 @@ $runs = @(
 
 Push-Location $repoRoot
 try {
+    if (-not $Smoke) {
+        if ([string]::IsNullOrWhiteSpace($ResultName)) {
+            $ResultName = "result_local"
+            Write-Warning "未指定 -ResultName，正式结果将默认从 results/result_local/ 读取并回写。"
+        }
+
+        uv run python -m ship_motion.prepare_formal_result --result-name $ResultName --repo-root $repoRoot
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+
     foreach ($item in $runs) {
-        $configPath = Join-Path $repoRoot $item.Config
+        $configPath = if ($Smoke) {
+            Join-Path $repoRoot $item.Config
+        }
+        else {
+            Join-Path $repoRoot ("results/{0}/runtime_configs/{1}" -f $ResultName, [System.IO.Path]::GetFileName($item.Config))
+        }
         $runName = if ($Smoke) { "$($item.Run)_smoke" } else { $item.Run }
-        $runRoot = if ($Smoke) { "outputs/smoke" } else { "outputs" }
+        $runRoot = if ($Smoke) { "outputs/smoke" } else { "results/$ResultName/outputs" }
         $checkpointPath = Join-Path $repoRoot "$runRoot/$runName/best.pt"
 
         if (-not (Test-Path -LiteralPath $configPath)) {

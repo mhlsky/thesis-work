@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -19,6 +20,7 @@ def summarize_results(
     run_output_root: str | Path = "outputs",
     summary_output_dir: str | Path = "outputs/summary",
     smoke: bool = False,
+    skip_missing_runs: bool = True,
 ) -> dict[str, Path]:
     """汇总 routine / OOD / physics 指标表。"""
     ablation_cfg = load_yaml(ablation_config_path)
@@ -29,19 +31,38 @@ def summarize_results(
     routine_rows: list[dict[str, Any]] = []
     ood_rows: list[dict[str, Any]] = []
     physics_rows: list[dict[str, Any]] = []
+    skipped_runs: list[str] = []
 
     for item in selected_runs:
         run_name = resolve_run_name(str(item["run_name"]), smoke=smoke)
         run_dir = run_root / run_name
         if not run_dir.exists():
-            raise FileNotFoundError(f"Run directory not found: {run_dir}")
+            message = f"Run directory not found: {run_dir}"
+            if not skip_missing_runs:
+                raise FileNotFoundError(message)
+            print(f"[Warn] {message}; skipping this run.", file=sys.stderr)
+            skipped_runs.append(run_name)
+            continue
 
         display_name = str(item.get("display_name", run_name))
         order = int(item.get("order", 999))
         category = str(item.get("category", "main"))
 
+        required_metric_paths: dict[str, Path] = {
+            split_name: run_dir / f"metrics_{split_name}.json"
+            for split_name in ("routine_test", "ood_test")
+        }
+        missing_metric_path = next((path for path in required_metric_paths.values() if not path.exists()), None)
+        if missing_metric_path is not None:
+            message = f"Metrics file not found: {missing_metric_path}"
+            if not skip_missing_runs:
+                raise FileNotFoundError(message)
+            print(f"[Warn] {message}; skipping this run.", file=sys.stderr)
+            skipped_runs.append(run_name)
+            continue
+
         for split_name, collector in [("routine_test", routine_rows), ("ood_test", ood_rows)]:
-            metrics = load_json(run_dir / f"metrics_{split_name}.json")
+            metrics = load_json(required_metric_paths[split_name])
             collector.append(build_metric_row(order, display_name, run_name, category, split_name, metrics))
 
             if "smoothness" in metrics or "roll_consistency_rmse" in metrics:
@@ -55,6 +76,12 @@ def summarize_results(
                         "roll_consistency_rmse": float(metrics.get("roll_consistency_rmse", 0.0)),
                     }
                 )
+
+    if not routine_rows or not ood_rows:
+        raise FileNotFoundError(
+            f"No complete results were found under {run_root}. "
+            "Please check whether the target run directories and metrics JSON files exist."
+        )
 
     routine_path = summary_dir / "ablation_routine_test.csv"
     ood_path = summary_dir / "ablation_ood_test.csv"
@@ -103,6 +130,12 @@ def summarize_results(
         physics_rows,
         ["order", "model", "run_name", "split", "smoothness", "roll_consistency_rmse"],
     )
+    if skipped_runs:
+        print(
+            "[Warn] Skipped runs due to missing directories or metrics: "
+            + ", ".join(sorted(set(skipped_runs))),
+            file=sys.stderr,
+        )
     return {
         "routine": routine_path,
         "ood": ood_path,
@@ -178,6 +211,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--run-output-root", default="outputs")
     parser.add_argument("--summary-output-dir", default="outputs/summary")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument(
+        "--strict-missing-runs",
+        action="store_true",
+        help="Fail immediately when a run directory or metrics file is missing.",
+    )
     args = parser.parse_args(argv)
 
     outputs = summarize_results(
@@ -186,6 +224,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         run_output_root=args.run_output_root,
         summary_output_dir=args.summary_output_dir,
         smoke=args.smoke,
+        skip_missing_runs=not args.strict_missing_runs,
     )
     for name, path in outputs.items():
         print(f"{name}: {path}")

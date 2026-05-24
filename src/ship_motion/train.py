@@ -52,6 +52,32 @@ def format_duration(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+def resolve_linear_warmup_scale(epoch: int | None, warmup_epochs: int | None) -> float:
+    """把辅助损失权重按 epoch 做线性 warmup，避免训练初期干扰主任务。"""
+    if epoch is None:
+        return 1.0
+    total = int(warmup_epochs or 0)
+    if total <= 0:
+        return 1.0
+    return min(max(float(epoch) / float(total), 0.0), 1.0)
+
+
+def build_effective_lambda_vmd(base_lambda: float, vmd_cfg: dict[str, Any], epoch: int | None = None) -> float:
+    """根据 VMD warmup 设置，生成当前 epoch 实际生效的辅助损失权重。"""
+    return float(base_lambda) * resolve_linear_warmup_scale(epoch=epoch, warmup_epochs=vmd_cfg.get("warmup_epochs"))
+
+
+def build_effective_physics_cfg(physics_cfg: dict[str, Any] | None, epoch: int | None = None) -> dict[str, Any]:
+    """根据 physics warmup 设置，生成当前 epoch 生效的物理约束配置。"""
+    effective = copy.deepcopy(physics_cfg or {})
+    if not effective.get("enabled", False):
+        return effective
+    scale = resolve_linear_warmup_scale(epoch=epoch, warmup_epochs=effective.get("warmup_epochs"))
+    effective["lambda_smooth"] = float(effective.get("lambda_smooth", 0.0)) * scale
+    effective["lambda_roll"] = float(effective.get("lambda_roll", 0.0)) * scale
+    return effective
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -185,6 +211,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     optimizer = build_optimizer(model, train_cfg)
     max_eval_steps = train_cfg.get("max_eval_steps")
     lambda_vmd = float(runtime_config.get("vmd", {}).get("lambda_vmd", 0.0))
+    vmd_cfg = runtime_config.get("vmd", {})
     physics_cfg = runtime_config.get("physics", {})
     run_name = str(runtime_config.get("run_name", "run"))
     model_name = str(runtime_config.get("model", {}).get("name", "unknown_model"))
@@ -271,10 +298,15 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
 
     for epoch in range(1, epochs + 1):
         start_time = time.perf_counter()
+        effective_lambda_vmd = build_effective_lambda_vmd(lambda_vmd, vmd_cfg=vmd_cfg, epoch=epoch)
+        effective_physics_cfg = build_effective_physics_cfg(physics_cfg=physics_cfg, epoch=epoch)
         train_steps = resolve_progress_total(loaders["train"], max_steps=max_train_steps)
         print(
             f"[Train] epoch {epoch}/{epochs} started | model={model_name} | "
-            f"run={run_name} | steps={train_steps if train_steps is not None else '?'} | device={device_label}"
+            f"run={run_name} | steps={train_steps if train_steps is not None else '?'} | device={device_label} | "
+            f"lambda_vmd_eff={effective_lambda_vmd:.4f} | "
+            f"lambda_smooth_eff={float(effective_physics_cfg.get('lambda_smooth', 0.0)):.4f} | "
+            f"lambda_roll_eff={float(effective_physics_cfg.get('lambda_roll', 0.0)):.4f}"
         )
         train_loss = train_one_epoch(
             model=model,
@@ -283,8 +315,8 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             device=device,
             scaler=bundle["scaler"],
             y_std=bundle["scaler"].y_std,
-            lambda_vmd=lambda_vmd,
-            physics_cfg=physics_cfg,
+            lambda_vmd=effective_lambda_vmd,
+            physics_cfg=effective_physics_cfg,
             grad_clip=float(grad_clip) if grad_clip is not None else None,
             max_steps=max_train_steps,
             non_blocking=loader_settings["non_blocking"],
@@ -300,8 +332,8 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             scaler=bundle["scaler"],
             target_cols=data_cfg["target_cols"],
             device=device,
-            lambda_vmd=lambda_vmd,
-            physics_cfg=physics_cfg,
+            lambda_vmd=effective_lambda_vmd,
+            physics_cfg=effective_physics_cfg,
             max_steps=max_eval_steps,
             non_blocking=loader_settings["non_blocking"],
             show_progress=True,

@@ -119,11 +119,18 @@ loss = pred_loss
 ```yaml
 vmd:
   lambda_vmd: 0.2
+  warmup_epochs: 5
 physics:
   enabled: true
   lambda_smooth: 0.01
   lambda_roll: 0.05
   dt: 1.0
+  warmup_epochs: 8
+  smoothness_target_cols: [p, r, phi]
+  normalize_by_target_std: true
+  roll_integration: trapezoid
+  p_col: p
+  phi_col: phi
 ```
 
 如果训练变差，先降低：
@@ -172,11 +179,18 @@ vmd:
   enabled: true
   K: 3
   lambda_vmd: 0.2
+  warmup_epochs: 5
 physics:
   enabled: true
   lambda_smooth: 0.01
   lambda_roll: 0.05
   dt: 1.0
+  warmup_epochs: 8
+  smoothness_target_cols: [p, r, phi]
+  normalize_by_target_std: true
+  roll_integration: trapezoid
+  p_col: p
+  phi_col: phi
 train:
   seed: 42
   batch_size: 128
@@ -188,6 +202,12 @@ train:
   num_workers: 0
   device: auto
 ```
+
+推荐优先级补充：
+
+1. 先把平滑约束限制在 `p / r / phi`，避免直接抹平 `u / v`；
+2. 再用 `normalize_by_target_std: true` 让不同量纲的物理惩罚更可比；
+3. 最后把 `roll_integration` 改为 `trapezoid`，减少离散积分过粗带来的偏差。
 
 ---
 

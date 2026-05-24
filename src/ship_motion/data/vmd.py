@@ -53,7 +53,7 @@ class VMDConfig:
 
     def cache_dir_name(self) -> str:
         """生成与参数绑定的缓存目录名。"""
-        alpha_str = str(self.alpha).replace(".", "_")
+        alpha_str = f"{self.alpha:g}".replace(".", "_")
         return f"K{self.K}_alpha{alpha_str}"
 
 

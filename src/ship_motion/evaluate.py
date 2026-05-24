@@ -135,6 +135,96 @@ def log_runtime_environment(device: torch.device, repo_root: Path | None = None)
     print("=" * 80)
 
 
+def resolve_physics_runtime_options(
+    physics_cfg: dict[str, Any] | None,
+    target_cols: Sequence[str],
+    y_std: Sequence[float] | None = None,
+) -> dict[str, Any]:
+    """把 physics 配置解析成训练/评估阶段都能直接使用的运行时参数。"""
+    cfg = physics_cfg or {}
+    smoothness_target_indices = _resolve_target_indices(
+        target_cols=target_cols,
+        target_names=cfg.get("smoothness_target_cols"),
+        target_indices=cfg.get("smoothness_target_indices"),
+    )
+    p_idx = _resolve_single_target_index(
+        target_cols=target_cols,
+        target_name=cfg.get("p_col"),
+        target_index=cfg.get("p_idx"),
+        default_name="p",
+        default_index=2,
+        label="p",
+    )
+    phi_idx = _resolve_single_target_index(
+        target_cols=target_cols,
+        target_name=cfg.get("phi_col"),
+        target_index=cfg.get("phi_idx"),
+        default_name="phi",
+        default_index=4,
+        label="phi",
+    )
+    normalize_by_target_std = _parse_bool_flag(cfg.get("normalize_by_target_std", False))
+    target_scales = list(y_std) if normalize_by_target_std and y_std is not None else None
+    roll_residual_scale = None
+    if target_scales is not None and 0 <= phi_idx < len(target_scales):
+        roll_residual_scale = float(target_scales[phi_idx])
+    return {
+        "smoothness_target_indices": smoothness_target_indices,
+        "p_idx": p_idx,
+        "phi_idx": phi_idx,
+        "target_scales": target_scales,
+        "roll_integration": str(cfg.get("roll_integration", "euler")),
+        "roll_residual_scale": roll_residual_scale,
+    }
+
+
+def _resolve_target_indices(
+    target_cols: Sequence[str],
+    target_names: Sequence[str] | None,
+    target_indices: Sequence[int] | None,
+) -> list[int] | None:
+    """优先按列名解析目标维；未配置时返回 None 表示沿用全部目标。"""
+    if target_names:
+        indices: list[int] = []
+        available = list(target_cols)
+        for name in target_names:
+            if name not in available:
+                raise ValueError(f"Unknown target column for physics config: {name!r}; expected one of {available}")
+            indices.append(available.index(str(name)))
+        return indices
+    if target_indices:
+        resolved = [int(index) for index in target_indices]
+        for index in resolved:
+            if index < 0 or index >= len(target_cols):
+                raise ValueError(f"Target index out of range for physics config: {index}")
+        return resolved
+    return None
+
+
+def _resolve_single_target_index(
+    target_cols: Sequence[str],
+    target_name: str | None,
+    target_index: int | None,
+    default_name: str,
+    default_index: int,
+    label: str,
+) -> int:
+    """解析某个物理约束依赖的单一目标维，如 p 或 phi。"""
+    if target_name is not None:
+        available = list(target_cols)
+        if target_name not in available:
+            raise ValueError(f"Unknown {label} target column: {target_name!r}; expected one of {available}")
+        return available.index(str(target_name))
+    if target_index is not None:
+        resolved = int(target_index)
+        if resolved < 0 or resolved >= len(target_cols):
+            raise ValueError(f"{label} target index out of range: {resolved}")
+        return resolved
+    if default_name in target_cols:
+        return list(target_cols).index(default_name)
+    return default_index
+
+
 def evaluate_model(
     model: torch.nn.Module,
     loader: DataLoader,
@@ -234,8 +324,23 @@ def evaluate_model_with_predictions(
     physics_enabled = bool((physics_cfg or {}).get("enabled", False))
     if physics_enabled:
         dt = float((physics_cfg or {}).get("dt", 1.0))
-        metrics["smoothness"] = smoothness_metric(y_pred_raw)
-        metrics["roll_consistency_rmse"] = roll_consistency_rmse(y_pred_raw, last_state_raw, dt=dt)
+        physics_runtime = resolve_physics_runtime_options(
+            physics_cfg=physics_cfg,
+            target_cols=target_cols,
+            y_std=scaler.y_std,
+        )
+        metrics["smoothness"] = smoothness_metric(
+            y_pred_raw,
+            target_indices=physics_runtime["smoothness_target_indices"],
+        )
+        metrics["roll_consistency_rmse"] = roll_consistency_rmse(
+            y_pred_raw,
+            last_state_raw,
+            dt=dt,
+            p_idx=physics_runtime["p_idx"],
+            phi_idx=physics_runtime["phi_idx"],
+            integration=physics_runtime["roll_integration"],
+        )
     metrics["num_samples"] = int(y_pred_raw.shape[0])
     metrics["num_forecast_steps"] = int(y_pred_raw.shape[1])
     metrics["loss_mse_std"] = float(sum(losses) / len(losses))
@@ -292,6 +397,11 @@ def compute_model_losses(
     if physics_enabled:
         if scaler is None:
             raise ValueError("Physics loss requires scaler for inverse transform.")
+        physics_runtime = resolve_physics_runtime_options(
+            physics_cfg=physics_cfg,
+            target_cols=getattr(scaler, "target_cols", []),
+            y_std=getattr(scaler, "y_std", None),
+        )
         y_hat_raw = scaler.inverse_y_tensor(y_hat)
         physics_total, _, _ = physics_loss(
             y_raw=y_hat_raw,
@@ -299,6 +409,12 @@ def compute_model_losses(
             lambda_smooth=float((physics_cfg or {}).get("lambda_smooth", 0.0)),
             lambda_roll=float((physics_cfg or {}).get("lambda_roll", 0.0)),
             dt=float((physics_cfg or {}).get("dt", 1.0)),
+            p_idx=physics_runtime["p_idx"],
+            phi_idx=physics_runtime["phi_idx"],
+            smoothness_target_indices=physics_runtime["smoothness_target_indices"],
+            target_scales=physics_runtime["target_scales"],
+            roll_integration=physics_runtime["roll_integration"],
+            roll_residual_scale=physics_runtime["roll_residual_scale"],
         )
         total_loss = total_loss + physics_total
 

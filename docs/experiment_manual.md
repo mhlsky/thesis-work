@@ -100,6 +100,8 @@ powershell -File .\scripts\xxx.ps1
 ```text
 scripts/setup_cloud_env.sh
 scripts/run_full_training.sh
+scripts/run_formal_result.sh
+scripts/plot_formal_result.sh
 ```
 
 如果你希望训练在 SSH 断开后继续运行，建议再配合阅读：
@@ -113,7 +115,7 @@ docs/tmux_cloud_manual.md
 ```bash
 conda activate your_env
 bash scripts/setup_cloud_env.sh
-bash scripts/run_full_training.sh
+bash scripts/run_formal_result.sh . result_2
 ```
 
 说明：
@@ -123,7 +125,9 @@ bash scripts/run_full_training.sh
 - 这两个 Linux 脚本现在会**直接复用当前激活环境里的 `python`**，不再默认执行 `uv sync` 或 `uv run`。
 
 第一个脚本负责环境检查与 smoke 检查；  
-第二个脚本负责正式 VMD 缓存、正式训练、predictions 导出、汇总与绘图。
+第二个脚本负责正式 VMD 缓存、正式训练、predictions 导出、汇总与绘图；  
+第三个脚本会把整次实验固定写到 `results/<result_name>/` 下；  
+第四个脚本用于对已有 `results/<result_name>/outputs/` 重新汇总和重画图表。
 
 ---
 
@@ -496,10 +500,10 @@ powershell -File .\scripts\smoke_step_07_experiments.ps1
 powershell -File .\scripts\evaluate_all.ps1 -Smoke
 ```
 
-正式版本：
+正式版本（默认建议显式指定结果目录名）：
 
 ```powershell
-powershell -File .\scripts\evaluate_all.ps1
+powershell -File .\scripts\evaluate_all.ps1 -ResultName result_2
 ```
 
 ### 9.4 汇总与绘图
@@ -513,7 +517,7 @@ powershell -File .\scripts\plot_results.ps1 -Smoke
 正式：
 
 ```powershell
-powershell -File .\scripts\plot_results.ps1
+powershell -File .\scripts\plot_results.ps1 -ResultName result_2
 ```
 
 ### 9.5 批量主线训练
@@ -521,7 +525,7 @@ powershell -File .\scripts\plot_results.ps1
 如果你要顺序跑主线实验：
 
 ```powershell
-powershell -File .\scripts\run_ablation.ps1
+powershell -File .\scripts\run_ablation.ps1 -ResultName result_2
 ```
 
 如果只是 smoke：
@@ -530,10 +534,38 @@ powershell -File .\scripts\run_ablation.ps1
 powershell -File .\scripts\run_ablation.ps1 -Smoke
 ```
 
+### 9.5.1 第一次正式实验后的补充实验
+
+如果你已经有 `result_1`，并且只想补：
+
+- `persistence` 正式结果；
+- `vmd_ccg_xlstm`（第一次实验后新增了 VMD warmup 训练逻辑）；
+- `vmd_ccg_phys_xlstm`（第一次实验后新增了更稳的 physics 训练/评估逻辑）；
+
+可以直接运行：
+
+```powershell
+powershell -File .\scripts\run_followup_experiments.ps1 -ResultName result_2_followup
+```
+
+如果你准备在 Linux 云服务器上正式补充实验，优先用：
+
+```bash
+bash scripts/run_followup_experiments.sh . result_2_followup
+```
+
+这个脚本默认**不会**重复训练：
+
+- `lstm`
+- `gru`
+- `transformer`
+- `lite_xlstm`
+- `ccg_xlstm`
+
 ### 9.6 Step 07 典型输出
 
 ```text
-outputs/summary/
+results/<result_name>/outputs/summary/
   ablation_routine_test.csv
   ablation_ood_test.csv
   physics_metrics.csv
@@ -543,6 +575,7 @@ outputs/summary/
     pred_u_ood.png
     pred_phi_ood.png
     rmse_bar.png
+    rmse_ood_bar.png
     roll_consistency_bar.png
 ```
 
@@ -619,7 +652,7 @@ powershell -File .\scripts\smoke_step_07_experiments.ps1
 - 不代表正式结论
 - 用来验证流程和代码
 
-### 11.2 `outputs/{run_name}/`
+### 11.2 `results/<result_name>/outputs/{run_name}/`
 
 这里放正式训练结果。  
 常见文件：
@@ -634,12 +667,12 @@ powershell -File .\scripts\smoke_step_07_experiments.ps1
 - `predictions_routine_test.npz`
 - `predictions_ood_test.npz`
 
-### 11.3 `outputs/cache/`
+### 11.3 `results/<result_name>/outputs/cache/`
 
 这里放 VMD 缓存。  
 正式和 smoke 分开：
 
-- 正式：`outputs/cache/vmd/...`
+- 正式：`results/<result_name>/outputs/cache/vmd/...`
 - smoke：`outputs/cache/vmd_smoke/...`
 
 ---
@@ -673,7 +706,7 @@ powershell -File .\scripts\smoke_step_03_vmd.ps1
 或正式：
 
 ```powershell
-powershell -File .\scripts\build_vmd_cache.ps1
+powershell -File .\scripts\build_vmd_cache.ps1 -ResultName result_2
 ```
 
 ### 12.4 训练很慢
@@ -713,19 +746,19 @@ powershell -File .\scripts\build_vmd_cache.ps1
 ### 13.1 看单个模型结果
 
 ```text
-outputs/{run_name}/
+results/<result_name>/outputs/{run_name}/
 ```
 
 ### 13.2 看主线汇总表
 
 ```text
-outputs/summary/
+results/<result_name>/outputs/summary/
 ```
 
 ### 13.3 看论文图
 
 ```text
-outputs/summary/figures/
+results/<result_name>/outputs/summary/figures/
 ```
 
 ---

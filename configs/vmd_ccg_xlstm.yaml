@@ -72,6 +72,10 @@ vmd:
   # VMD 辅助损失权重：总损失 = 预测 MSE + lambda_vmd * VMD MSE
   lambda_vmd: 0.2
 
+  # 训练前几轮先让主预测站稳，再线性拉起 VMD 辅助损失，
+  # 避免一开始就被模态监督带偏。
+  warmup_epochs: 5
+
   # VMD 缓存根目录。程序会在下面自动创建 train / validation / routine_test / ood_test 子目录。
   cache_root: outputs/cache/vmd/K3_alpha2000
 

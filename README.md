@@ -23,6 +23,7 @@ thesis-work/
     learn.md
     implementation_steps/
     references/
+  results/
   outputs/
   scripts/
     smoke_step_01_data.ps1
@@ -30,6 +31,9 @@ thesis-work/
     smoke_step_03_vmd.ps1
     build_vmd_cache.ps1
     run_baselines.ps1
+    run_formal_result.ps1
+    run_followup_experiments.ps1
+    run_followup_experiments.sh
   src/
     ship_motion/
       data/
@@ -62,6 +66,8 @@ pwsh -File .\scripts\smoke_step_02_training.ps1
 pwsh -File .\scripts\smoke_step_03_vmd.ps1
 pwsh -File .\scripts\build_vmd_cache.ps1
 pwsh -File .\scripts\run_baselines.ps1
+pwsh -File .\scripts\run_followup_experiments.ps1 -ResultName result_2_followup
+bash scripts/run_followup_experiments.sh . result_2_followup
 ```
 
 ## Step 01~07 实验手册
@@ -83,7 +89,7 @@ pwsh -File .\scripts\run_baselines.ps1
 - 每个实现步骤都必须配套一个轻量 smoke-test 脚本或等价命令。
 - 本地 smoke test 只验证流程是否跑通，不要求完整训练效果。
 - smoke test 应使用极小样本、极少 epoch/step、小 batch，并把临时输出写入 `outputs/`。
-- 正式训练、消融和完整评估默认后续放到租用算力平台运行。
+- 正式训练、消融和完整评估默认写入 `results/<result_name>/`，便于归档和重画图表。
 
 ## 文档入口
 

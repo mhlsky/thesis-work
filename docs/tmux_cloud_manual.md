@@ -19,7 +19,7 @@
 如果你直接在普通 SSH 终端里跑：
 
 ```bash
-bash scripts/run_full_training.sh
+bash scripts/run_full_training.sh . result_2
 ```
 
 一旦发生下面任一情况，训练就可能中断：
@@ -54,9 +54,9 @@ scripts/run_full_training.sh
 2. 先激活你自己的 conda / venv 环境；
 3. 在该会话里执行：
    - `bash scripts/setup_cloud_env.sh`
-   - `bash scripts/run_full_training.sh`
+   - `bash scripts/run_full_training.sh . result_2`
 4. 再开一个 `tmux` 窗口专门看 GPU；
-5. 再开一个窗口专门 `tail -f logs/*.log` 看日志。
+5. 再开一个窗口专门 `tail -f results/result_2/logs/*.log` 看日志。
 
 ---
 
@@ -181,7 +181,7 @@ bash scripts/setup_cloud_env.sh
 环境初始化通过后，在同一个 `tmux` 会话里执行：
 
 ```bash
-bash scripts/run_full_training.sh
+bash scripts/run_full_training.sh . result_2
 ```
 
 这个脚本会顺序执行：
@@ -205,16 +205,16 @@ bash scripts/run_full_training.sh
 脚本里每一步都会写独立日志到：
 
 ```text
-logs/
+results/<result_name>/logs/
 ```
 
 例如：
 
-- `logs/train_lstm.log`
-- `logs/train_vmd_ccg_phys_xlstm.log`
-- `logs/eval_vmd_ccg_phys_xlstm.log`
-- `logs/summarize_results.log`
-- `logs/plot_results.log`
+- `results/result_2/logs/train_lstm.log`
+- `results/result_2/logs/train_vmd_ccg_phys_xlstm.log`
+- `results/result_2/logs/eval_vmd_ccg_phys_xlstm.log`
+- `results/result_2/logs/summarize_results.log`
+- `results/result_2/logs/plot_results.log`
 
 ---
 
@@ -438,13 +438,13 @@ python -m ship_motion.evaluate \
 ```bash
 python -m ship_motion.summarize_results \
   --ablation-config configs/ablation_list.yaml \
-  --run-output-root outputs \
-  --summary-output-dir outputs/summary
+  --run-output-root results/result_2/outputs \
+  --summary-output-dir results/result_2/outputs/summary
 
 python -m ship_motion.plot_results \
   --ablation-config configs/ablation_list.yaml \
-  --run-output-root outputs \
-  --summary-output-dir outputs/summary
+  --run-output-root results/result_2/outputs \
+  --summary-output-dir results/result_2/outputs/summary
 ```
 
 ---
@@ -459,7 +459,7 @@ python -m ship_motion.plot_results \
 也就是说，你**直接在 `tmux` 里运行训练**就行，不必再多套一层：
 
 ```bash
-nohup bash scripts/run_full_training.sh &
+nohup bash scripts/run_full_training.sh . result_2 &
 ```
 
 对这个项目来说，推荐：
@@ -498,7 +498,7 @@ watch -n 1 nvidia-smi
 例如：
 
 ```bash
-tail -f logs/train_vmd_ccg_phys_xlstm.log
+tail -f results/result_2/logs/train_vmd_ccg_phys_xlstm.log
 ```
 
 如果长时间没有新内容，要检查：
@@ -512,16 +512,16 @@ tail -f logs/train_vmd_ccg_phys_xlstm.log
 训练完成后应能看到：
 
 ```text
-outputs/{run_name}/best.pt
-outputs/{run_name}/metrics_*.json
-outputs/{run_name}/predictions_*.npz
+results/<result_name>/outputs/{run_name}/best.pt
+results/<result_name>/outputs/{run_name}/metrics_*.json
+results/<result_name>/outputs/{run_name}/predictions_*.npz
 ```
 
 Step 07 完成后应能看到：
 
 ```text
-outputs/summary/
-outputs/summary/figures/
+results/<result_name>/outputs/summary/
+results/<result_name>/outputs/summary/figures/
 ```
 
 ---
@@ -624,7 +624,7 @@ cd ~/thesis-work
 sudo apt update && sudo apt install -y tmux
 tmux new -s thesis_train
 bash scripts/setup_cloud_env.sh
-bash scripts/run_full_training.sh
+bash scripts/run_full_training.sh . result_2
 ```
 
 ### 中途退出但不停训练
@@ -649,7 +649,7 @@ watch -n 1 nvidia-smi
 ### 看日志
 
 ```bash
-tail -f logs/train_vmd_ccg_phys_xlstm.log
+tail -f results/result_2/logs/train_vmd_ccg_phys_xlstm.log
 ```
 
 ---
@@ -660,7 +660,7 @@ tail -f logs/train_vmd_ccg_phys_xlstm.log
 
 1. `tmux` 建会话  
 2. 先跑 `setup_cloud_env.sh`  
-3. 再跑 `run_full_training.sh`  
+3. 再跑 `run_full_training.sh . result_2`
 4. 开 GPU 监控窗口  
 5. 开日志窗口  
 6. 定期回来查看  

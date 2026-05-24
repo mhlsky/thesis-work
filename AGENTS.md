@@ -25,7 +25,8 @@
 ## Environment And Commands
 
 - Use `uv` for environment and command execution when possible.
-- Prefer PowerShell-compatible commands and scripts for examples and automation.
+- Local smoke checks and ad-hoc examples may use PowerShell, but this project's **final formal experiments are expected to run on Linux cloud servers**.
+- For any newly added **formal training / evaluation / result-regeneration workflow**, prefer providing a Linux `bash` / `.sh` entry first, and keep Windows compatibility only as a secondary convenience when practical.
 - When creating or rewriting text files that contain Chinese comments or documentation, use a UTF-8-safe editing path and avoid command patterns that may silently replace non-ASCII characters with `?` or mojibake.
 - After bulk file generation or scripted rewrites, quickly verify that Chinese text in touched `.md`, `.py`, `.yaml`, `.yml`, and `.ps1` files was preserved correctly.
 - Before introducing a new dependency, confirm it is necessary and add it to `pyproject.toml`.
@@ -34,6 +35,7 @@
   - `uv sync`
   - `uv run python -m ship_motion.data.dataset --config configs/base.yaml --smoke`
   - `pwsh -File .\\scripts\\smoke_step_01_data.ps1`
+  - `bash scripts/run_formal_result.sh . result_2`
 
 ## Code Changes
 

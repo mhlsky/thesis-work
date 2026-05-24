@@ -1,6 +1,7 @@
 # Project outputs
 outputs/
 log/
+results/
 
 # Python bytecode and interpreter caches
 __pycache__/

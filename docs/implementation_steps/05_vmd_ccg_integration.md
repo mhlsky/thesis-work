@@ -274,6 +274,7 @@ vmd:
   enabled: true
   K: 3
   lambda_vmd: 0.2
+  warmup_epochs: 5
 train:
   seed: 42
   batch_size: 128
@@ -299,6 +300,12 @@ train:
 5. Delta Decoder 可通过配置关闭；
 6. State Mixer 可通过配置关闭；
 7. VMD-CCG-xLSTM 能完整训练和评估。
+
+补充建议：
+
+- 如果发现“一加 VMD 就整体退化”，不要只先改 `lambda_vmd`；
+- 更稳的第一步是保留原权重上限，同时加入 `warmup_epochs`，让 VMD 辅助损失在前几轮线性爬坡；
+- 这样可以先让主预测分支站稳，再逐步吸收 VMD 监督。
 
 ---
 

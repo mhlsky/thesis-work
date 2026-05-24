@@ -38,11 +38,13 @@ def generate_plots(
     figure_paths: list[Path] = []
 
     # 预测曲线图：默认画 u 和 phi，在 routine / OOD 两个 split 上各一组。
+    # 这里优先保留论文主线中最有代表性的模型，避免一张图里线条过多难以阅读。
     curve_run_names = [
+        "persistence_seq128_pred10",
         "lstm_seq128_pred10",
-        "gru_seq128_pred10",
         "transformer_seq128_pred10",
         "lite_xlstm_seq128_pred10",
+        "ccg_xlstm_seq128_pred10",
         "vmd_ccg_xlstm_seq128_pred10",
         "vmd_ccg_phys_xlstm_seq128_pred10",
     ]
@@ -66,8 +68,10 @@ def generate_plots(
             figure_paths.append(figure_path)
 
     routine_csv = summary_dir / "ablation_routine_test.csv"
+    ood_csv = summary_dir / "ablation_ood_test.csv"
     physics_csv = summary_dir / "physics_metrics.csv"
     rmse_bar_path = figures_dir / "rmse_bar.png"
+    rmse_ood_bar_path = figures_dir / "rmse_ood_bar.png"
     roll_bar_path = figures_dir / "roll_consistency_bar.png"
 
     plot_bar_chart(
@@ -78,6 +82,15 @@ def generate_plots(
         ylabel="RMSE Mean",
     )
     figure_paths.append(rmse_bar_path)
+
+    plot_bar_chart(
+        csv_path=ood_csv,
+        figure_path=rmse_ood_bar_path,
+        metric_key="rmse_mean",
+        title="OOD Test RMSE Mean",
+        ylabel="RMSE Mean",
+    )
+    figure_paths.append(rmse_ood_bar_path)
 
     plot_bar_chart(
         csv_path=physics_csv,

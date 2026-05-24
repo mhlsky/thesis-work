@@ -44,6 +44,9 @@ vmd:
   init: 1
   tol: 1.0e-7
   lambda_vmd: 0.2
+
+  # 先让主预测分支学稳，再逐步打开 VMD 辅助监督。
+  warmup_epochs: 5
   cache_root: outputs/cache/vmd/K3_alpha2000
 
 physics:
@@ -58,6 +61,22 @@ physics:
 
   # 当前数据按 1 Hz 处理。
   dt: 1.0
+
+  # 物理约束也做线性 warmup，减少训练初期对主误差的干扰。
+  warmup_epochs: 8
+
+  # 平滑约束优先放在角速度/姿态相关变量上，先不要直接抹平 u / v。
+  smoothness_target_cols: [p, r, phi]
+
+  # 先按训练集标准差把物理损失做尺度归一化，避免某个变量数值范围更大时主导惩罚。
+  normalize_by_target_std: true
+
+  # 用梯形积分比单边欧拉更稳，适合离散时间下的 p-phi 一致性检查。
+  roll_integration: trapezoid
+
+  # 为了避免目标列顺序变化时约束绑错变量，优先按列名解析。
+  p_col: p
+  phi_col: phi
 
 output_dir: outputs
 run_name: vmd_ccg_phys_xlstm_seq128_pred10

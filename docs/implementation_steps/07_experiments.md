@@ -22,12 +22,14 @@ scripts/smoke_step_07_experiments.ps1
 scripts/run_ablation.ps1
 scripts/evaluate_all.ps1
 scripts/plot_results.ps1
+scripts/run_formal_result.sh
+scripts/plot_formal_result.sh
 ```
 
 输出：
 
 ```text
-outputs/summary/
+results/<result_name>/outputs/summary/
   ablation_routine_test.csv
   ablation_ood_test.csv
   physics_metrics.csv
@@ -37,6 +39,7 @@ outputs/summary/
     pred_u_ood.png
     pred_phi_ood.png
     rmse_bar.png
+    rmse_ood_bar.png
     roll_consistency_bar.png
 ```
 
@@ -202,14 +205,7 @@ pred_len = 1, 5, 10, 30
 顺序执行：
 
 ```powershell
-python -m ship_motion.train --config configs/lstm.yaml
-python -m ship_motion.train --config configs/gru.yaml
-python -m ship_motion.train --config configs/transformer.yaml
-python -m ship_motion.train --config configs/lite_xlstm.yaml
-python -m ship_motion.train --config configs/ccg_xlstm.yaml
-python -m ship_motion.train --config configs/vmd_ccg_xlstm.yaml
-python -m ship_motion.train --config configs/vmd_ccg_phys_xlstm.yaml
-python -m ship_motion.summarize_results --runs lstm_seq128_pred10,gru_seq128_pred10,transformer_seq128_pred10,lite_xlstm_seq128_pred10,ccg_xlstm_seq128_pred10,vmd_ccg_xlstm_seq128_pred10,vmd_ccg_phys_xlstm_seq128_pred10
+powershell -File .\scripts\run_ablation.ps1 -ResultName result_2
 ```
 
 如果训练慢，可以一个一个手动跑，不强求一键跑完。

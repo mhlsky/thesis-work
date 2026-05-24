@@ -11,7 +11,8 @@
 
 param(
     [string]$Config = "configs/vmd_ccg_xlstm.yaml",
-    [string]$CacheRoot = ""
+    [string]$CacheRoot = "",
+    [string]$ResultName = ""
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -23,6 +24,15 @@ try {
     if (-not (Test-Path -LiteralPath $configPath)) {
         Write-Error "Config not found: $configPath"
         exit 1
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ResultName)) {
+        Write-Host "==== Preparing formal runtime config for result $ResultName ====" -ForegroundColor Yellow
+        uv run python -m ship_motion.prepare_formal_result --result-name $ResultName --configs $Config --repo-root $repoRoot
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+        $configPath = Join-Path $repoRoot ("results/{0}/runtime_configs/{1}" -f $ResultName, [System.IO.Path]::GetFileName($Config))
     }
 
     Write-Host "==== Building VMD cache with $Config ====" -ForegroundColor Cyan

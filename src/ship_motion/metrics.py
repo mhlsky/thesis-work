@@ -82,9 +82,11 @@ def compute_metrics(y_pred_raw: Any, y_true_raw: Any, target_cols: Sequence[str]
     return metrics
 
 
-def smoothness_metric(y_pred_raw: Any) -> float:
+def smoothness_metric(y_pred_raw: Any, target_indices: Sequence[int] | None = None) -> float:
     """预测序列的二阶差分均方值，越小表示越平滑。"""
     pred = _to_numpy(y_pred_raw).astype(np.float64)
+    if target_indices:
+        pred = pred[:, :, list(target_indices)]
     if pred.shape[1] < 3:
         return 0.0
     d1 = pred[:, 1:, :] - pred[:, :-1, :]
@@ -98,6 +100,7 @@ def roll_consistency_rmse(
     dt: float = 1.0,
     p_idx: int = 2,
     phi_idx: int = 4,
+    integration: str = "euler",
 ) -> float:
     """衡量 p 与 phi 是否满足近似积分关系，越小越好。"""
     pred = _to_numpy(y_pred_raw).astype(np.float64)
@@ -107,9 +110,16 @@ def roll_consistency_rmse(
     phi_last = last_state[:, phi_idx]
     p_last = last_state[:, p_idx]
 
-    residuals = [phi_hat[:, 0] - phi_last - p_last * dt]
+    integration_name = str(integration).strip().lower()
+    if integration_name == "trapezoid":
+        residuals = [phi_hat[:, 0] - phi_last - 0.5 * (p_last + p_hat[:, 0]) * dt]
+    else:
+        residuals = [phi_hat[:, 0] - phi_last - p_last * dt]
     if pred.shape[1] > 1:
-        residuals.append(phi_hat[:, 1:] - phi_hat[:, :-1] - p_hat[:, :-1] * dt)
+        if integration_name == "trapezoid":
+            residuals.append(phi_hat[:, 1:] - phi_hat[:, :-1] - 0.5 * (p_hat[:, 1:] + p_hat[:, :-1]) * dt)
+        else:
+            residuals.append(phi_hat[:, 1:] - phi_hat[:, :-1] - p_hat[:, :-1] * dt)
     flat = np.concatenate([item.reshape(-1) for item in residuals], axis=0)
     return float(np.sqrt(np.mean(np.square(flat))))
 

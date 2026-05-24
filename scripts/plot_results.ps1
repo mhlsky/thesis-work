@@ -8,14 +8,20 @@ Step 07 结果汇总与绘图脚本。
 #>
 
 param(
-    [switch]$Smoke
+    [switch]$Smoke,
+    [string]$ResultName = ""
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
 
-$summaryDir = if ($Smoke) { "outputs/smoke/summary" } else { "outputs/summary" }
-$runRoot = if ($Smoke) { "outputs/smoke" } else { "outputs" }
+if (-not $Smoke -and [string]::IsNullOrWhiteSpace($ResultName)) {
+    $ResultName = "result_local"
+    Write-Warning "未指定 -ResultName，正式汇总与绘图将默认写入 results/result_local/。"
+}
+
+$summaryDir = if ($Smoke) { "outputs/smoke/summary" } else { "results/$ResultName/outputs/summary" }
+$runRoot = if ($Smoke) { "outputs/smoke" } else { "results/$ResultName/outputs" }
 
 Push-Location $repoRoot
 try {
