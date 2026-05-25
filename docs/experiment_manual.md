@@ -542,6 +542,10 @@ powershell -File .\scripts\run_ablation.ps1 -Smoke
 - `vmd_ccg_xlstm`（第一次实验后新增了 VMD warmup 训练逻辑）；
 - `vmd_ccg_phys_xlstm`（第一次实验后新增了更稳的 physics 训练/评估逻辑）；
 
+对应的“第一次反馈微调记录”见：
+
+- `docs/result_1_followup_tuning.md`
+
 可以直接运行：
 
 ```powershell
