@@ -1,0 +1,61 @@
+# 实验3：Phys / VMD 独立验证实验清单。
+# 说明：
+# 1. 这份清单用于 result3 的汇总；
+# 2. 所有 run_name 都对应 Linux 批量脚本生成的 runtime config；
+# 3. 分组上刻意把 Phys 与 VMD 拆开，避免继续把两类机制耦合在一起解释。
+
+runs:
+  - order: 0
+    run_name: e3_ccg_xlstm_base
+    display_name: CCG Baseline
+    category: baseline
+
+  - order: 10
+    run_name: e3_ccg_phys_s001_r000
+    display_name: CCG-Phys (smooth only)
+    category: phys_independent
+
+  - order: 11
+    run_name: e3_ccg_phys_s000_r005
+    display_name: CCG-Phys (roll only)
+    category: phys_independent
+
+  - order: 12
+    run_name: e3_ccg_phys_s001_r005
+    display_name: CCG-Phys (smooth+roll, conservative)
+    category: phys_independent
+
+  - order: 13
+    run_name: e3_ccg_phys_s001_r010
+    display_name: CCG-Phys (smooth+roll, standard)
+    category: phys_independent
+
+  - order: 20
+    run_name: e3_vmd_ccg_l005_base
+    display_name: VMD-CCG (l=0.05 base)
+    category: vmd_independent
+
+  - order: 21
+    run_name: e3_vmd_ccg_l005_warm10
+    display_name: VMD-CCG (warmup=10)
+    category: vmd_independent
+
+  - order: 22
+    run_name: e3_vmd_ccg_l005_lr5e4
+    display_name: VMD-CCG (lr=5e-4)
+    category: vmd_independent
+
+  - order: 23
+    run_name: e3_vmd_ccg_l005_k2_a1000
+    display_name: VMD-CCG (K=2, alpha=1000)
+    category: vmd_independent
+
+  - order: 24
+    run_name: e3_vmd_ccg_l005_k4_a3000
+    display_name: VMD-CCG (K=4, alpha=3000)
+    category: vmd_independent
+
+  - order: 25
+    run_name: e3_vmd_ccg_l005_nomixer
+    display_name: VMD-CCG (no state mixer)
+    category: vmd_independent
