@@ -1,0 +1,188 @@
+# 实验4：Phys / VMD 精修与联合验证实验清单。
+# 说明：
+# 1. 这份清单默认只覆盖单 seed 主实验；
+# 2. multi-seed robust 组会在运行时动态生成带 seed 后缀的 run_name，
+#    但默认不进入这张主表汇总，避免和单 seed 宽扫混在一起；
+# 3. 所有 run_name 都会由 scripts/run_result4_experiments.sh 生成对应 runtime config。
+
+runs:
+  - order: 0
+    run_name: e4_ccg_xlstm_base
+    display_name: CCG Baseline
+    category: baseline
+
+  - order: 10
+    run_name: e4_ccg_phys_s0005_r0000
+    display_name: CCG-Phys (smooth=0.0005, roll=0)
+    category: phys_scan
+
+  - order: 11
+    run_name: e4_ccg_phys_s0010_r0000
+    display_name: CCG-Phys (smooth=0.0010, roll=0)
+    category: phys_scan
+
+  - order: 12
+    run_name: e4_ccg_phys_s0000_r0025
+    display_name: CCG-Phys (smooth=0, roll=0.0025)
+    category: phys_scan
+
+  - order: 13
+    run_name: e4_ccg_phys_s0000_r0050
+    display_name: CCG-Phys (smooth=0, roll=0.0050)
+    category: phys_scan
+
+  - order: 14
+    run_name: e4_ccg_phys_s0000_r0075
+    display_name: CCG-Phys (smooth=0, roll=0.0075)
+    category: phys_scan
+
+  - order: 15
+    run_name: e4_ccg_phys_s0005_r0025
+    display_name: CCG-Phys (smooth=0.0005, roll=0.0025)
+    category: phys_scan
+
+  - order: 16
+    run_name: e4_ccg_phys_s0005_r0050
+    display_name: CCG-Phys (smooth=0.0005, roll=0.0050)
+    category: phys_scan
+
+  - order: 17
+    run_name: e4_ccg_phys_s0010_r0050
+    display_name: CCG-Phys (smooth=0.0010, roll=0.0050)
+    category: phys_scan
+
+  - order: 18
+    run_name: e4_ccg_phys_s0010_r0075
+    display_name: CCG-Phys (smooth=0.0010, roll=0.0075)
+    category: phys_scan
+
+  - order: 19
+    run_name: e4_ccg_phys_s0010_r0100
+    display_name: CCG-Phys (smooth=0.0010, roll=0.0100)
+    category: phys_scan
+
+  - order: 30
+    run_name: e4_ccg_phys_s0010_r0050_normoff
+    display_name: CCG-Phys (0.0010/0.0050, no std norm)
+    category: phys_diag
+
+  - order: 31
+    run_name: e4_ccg_phys_s0010_r0050_euler
+    display_name: CCG-Phys (0.0010/0.0050, euler)
+    category: phys_diag
+
+  - order: 32
+    run_name: e4_ccg_phys_s0010_r0050_warm4
+    display_name: CCG-Phys (0.0010/0.0050, warmup=4)
+    category: phys_diag
+
+  - order: 33
+    run_name: e4_ccg_phys_s0010_r0050_warm12
+    display_name: CCG-Phys (0.0010/0.0050, warmup=12)
+    category: phys_diag
+
+  - order: 40
+    run_name: e4_vmd_ccg_l005_lr1e3_mix
+    display_name: VMD-CCG (l=0.05, lr=1e-3, mixer)
+    category: vmd_scan
+
+  - order: 41
+    run_name: e4_vmd_ccg_l005_lr5e4_mix
+    display_name: VMD-CCG (l=0.05, lr=5e-4, mixer)
+    category: vmd_scan
+
+  - order: 42
+    run_name: e4_vmd_ccg_l005_lr1e3_nomix
+    display_name: VMD-CCG (l=0.05, lr=1e-3, no mixer)
+    category: vmd_scan
+
+  - order: 43
+    run_name: e4_vmd_ccg_l005_lr5e4_nomix
+    display_name: VMD-CCG (l=0.05, lr=5e-4, no mixer)
+    category: vmd_scan
+
+  - order: 44
+    run_name: e4_vmd_ccg_l005_lr3e4_nomix
+    display_name: VMD-CCG (l=0.05, lr=3e-4, no mixer)
+    category: vmd_scan
+
+  - order: 45
+    run_name: e4_vmd_ccg_l005_lr7e4_nomix
+    display_name: VMD-CCG (l=0.05, lr=7e-4, no mixer)
+    category: vmd_scan
+
+  - order: 46
+    run_name: e4_vmd_ccg_l002_lr5e4_nomix
+    display_name: VMD-CCG (l=0.02, lr=5e-4, no mixer)
+    category: vmd_scan
+
+  - order: 47
+    run_name: e4_vmd_ccg_l003_lr5e4_nomix
+    display_name: VMD-CCG (l=0.03, lr=5e-4, no mixer)
+    category: vmd_scan
+
+  - order: 48
+    run_name: e4_vmd_ccg_l008_lr5e4_nomix
+    display_name: VMD-CCG (l=0.08, lr=5e-4, no mixer)
+    category: vmd_scan
+
+  - order: 49
+    run_name: e4_vmd_ccg_l005_lr5e4_nomix_warm3
+    display_name: VMD-CCG (l=0.05, lr=5e-4, no mixer, warmup=3)
+    category: vmd_scan
+
+  - order: 50
+    run_name: e4_vmd_ccg_l005_lr5e4_nomix_warm8
+    display_name: VMD-CCG (l=0.05, lr=5e-4, no mixer, warmup=8)
+    category: vmd_scan
+
+  - order: 51
+    run_name: e4_vmd_ccg_l005_lr5e4_h8_d01
+    display_name: VMD-CCG (l=0.05, lr=5e-4, weak mixer h8 d0.1)
+    category: vmd_diag
+
+  - order: 52
+    run_name: e4_vmd_ccg_l005_lr5e4_h4_d01
+    display_name: VMD-CCG (l=0.05, lr=5e-4, weak mixer h4 d0.1)
+    category: vmd_diag
+
+  - order: 53
+    run_name: e4_vmd_ccg_l005_lr5e4_nomix_a1500
+    display_name: VMD-CCG (l=0.05, lr=5e-4, no mixer, alpha=1500)
+    category: vmd_diag
+
+  - order: 54
+    run_name: e4_vmd_ccg_l005_lr5e4_nomix_a2500
+    display_name: VMD-CCG (l=0.05, lr=5e-4, no mixer, alpha=2500)
+    category: vmd_diag
+
+  - order: 70
+    run_name: e4_joint_l005_lr5e4_nomix_r0025
+    display_name: Joint (l=0.05, lr=5e-4, no mixer, roll=0.0025)
+    category: joint
+
+  - order: 71
+    run_name: e4_joint_l005_lr5e4_nomix_r0050
+    display_name: Joint (l=0.05, lr=5e-4, no mixer, roll=0.0050)
+    category: joint
+
+  - order: 72
+    run_name: e4_joint_l005_lr5e4_nomix_s0005_r0025
+    display_name: Joint (l=0.05, lr=5e-4, no mixer, s=0.0005, r=0.0025)
+    category: joint
+
+  - order: 73
+    run_name: e4_joint_l005_lr5e4_nomix_s0005_r0050
+    display_name: Joint (l=0.05, lr=5e-4, no mixer, s=0.0005, r=0.0050)
+    category: joint
+
+  - order: 74
+    run_name: e4_joint_l005_lr5e4_nomix_s0010_r0050
+    display_name: Joint (l=0.05, lr=5e-4, no mixer, s=0.0010, r=0.0050)
+    category: joint
+
+  - order: 75
+    run_name: e4_joint_l005_lr5e4_nomix_s0010_r0075
+    display_name: Joint (l=0.05, lr=5e-4, no mixer, s=0.0010, r=0.0075)
+    category: joint
+
