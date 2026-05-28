@@ -72,6 +72,16 @@ bash scripts/run_result3_experiments.sh . result3
 bash scripts/run_result4_experiments.sh . result4
 ```
 
+说明：
+
+- `run_result3_experiments.sh` 与 `run_result4_experiments.sh` 现在支持按多张 GPU **并发分发独立实验**。
+- 默认会使用 `TRAIN_GPU_IDS=0,1`；如需覆盖，可在运行前设置：
+
+```bash
+export TRAIN_GPU_IDS=0,1
+export TRAIN_MAX_CONCURRENT=2
+```
+
 ## Step 01~07 实验手册
 
 如果你想按步骤完整跑通本项目，建议直接看：
@@ -99,17 +109,17 @@ bash scripts/run_result4_experiments.sh . result4
 - 正式 Linux / Windows 训练脚本会自动加载：
   - `scripts/server_train_env.sh`
   - `scripts/server_train_env.ps1`
-- 当前默认面向 **1 卡 40GB GPU + 12 核 CPU + 32GB 内存** 的服务器档位：
+- 当前默认面向 **2 卡 24GB GPU + 24 核 CPU + 64GB 内存** 的服务器档位：
   - 模型相关 `batch_size` 会按模型族自动放大；
   - `num_workers` 会按 CPU / 内存自动推断；
   - CUDA 且支持时会优先使用 `bf16`，否则回退到 `fp32`。
 - 如果后续换机器，可在运行前临时覆盖：
 
 ```bash
-export SHIP_MOTION_HW_PROFILE=single_gpu_24g
+export SHIP_MOTION_HW_PROFILE=dual_gpu_24g_24cpu_64g
 export SHIP_MOTION_GPU_MEMORY_GB=24
-export SHIP_MOTION_CPU_CORES=8
-export SHIP_MOTION_SYSTEM_MEMORY_GB=24
+export SHIP_MOTION_CPU_CORES=24
+export SHIP_MOTION_SYSTEM_MEMORY_GB=64
 export SHIP_MOTION_PRECISION=fp32
 ```
 

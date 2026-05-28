@@ -186,6 +186,8 @@ def resolve_hardware_snapshot(device: torch.device, hardware_cfg: dict[str, Any]
         profile = explicit_profile
     elif device.type != "cuda":
         profile = "cpu_only"
+    elif gpu_count >= 2 and (gpu_memory_gb or 0.0) >= 22.0 and cpu_cores >= 20 and (system_memory_gb or 0.0) >= 56.0:
+        profile = "dual_gpu_24g_24cpu_64g"
     elif gpu_count == 1 and (gpu_memory_gb or 0.0) >= 38.0 and cpu_cores >= 10 and (system_memory_gb or 0.0) >= 28.0:
         profile = "single_gpu_40g_12cpu_32g"
     elif gpu_count == 1 and (gpu_memory_gb or 0.0) >= 22.0:

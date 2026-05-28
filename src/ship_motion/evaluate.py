@@ -321,9 +321,11 @@ def evaluate_model_with_predictions(
 
             # 预测需要先反标准化后再统计最终指标；
             # 真实标签直接使用数据集已经提供好的 y_raw。
-            preds.append(scaler.inverse_y_tensor(y_hat).detach().cpu())
-            trues.append(batch["y_raw"].detach().cpu())
-            last_states.append(batch["last_state_raw"].detach().cpu())
+            # bf16/fp16 在后续 numpy/JSON/npz 流程里兼容性较差，
+            # 所以评估缓存统一转成 float32，再做指标统计与结果保存。
+            preds.append(scaler.inverse_y_tensor(y_hat).detach().float().cpu())
+            trues.append(batch["y_raw"].detach().float().cpu())
+            last_states.append(batch["last_state_raw"].detach().float().cpu())
         if progress_bar is not None:
             progress_bar.close()
 

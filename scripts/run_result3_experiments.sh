@@ -15,6 +15,8 @@ set -euo pipefail
 # - RUN_ONLY=cfg1,cfg2         只跑指定 runtime config（不带 .yaml），优先级高于 RUN_GROUP
 # - PYTHON_BIN=python          指定解释器，默认直接用当前激活环境中的 python
 # - SKIP_SUMMARY=1             跳过最后的汇总
+# - TRAIN_GPU_IDS=0,1          训练阶段允许调度的 GPU 列表；默认使用 0,1
+# - TRAIN_MAX_CONCURRENT=2     训练阶段最大并发任务数；默认等于 GPU 数
 #
 # 用法：
 #   conda activate your_env
@@ -68,6 +70,199 @@ run_cmd() {
   local task_end_ts
   task_end_ts=$(date +%s)
   print_banner "[Task Done] name=$name | stage=$stage_label | elapsed=$(format_duration "$((task_end_ts - task_start_ts))") | log=$LOG_ROOT/${name}.log"
+}
+
+trim_csv_into_array() {
+  local text="$1"
+  local -n target_ref="$2"
+  target_ref=()
+  IFS=',' read -r -a _raw_items <<< "$text"
+  local item
+  for item in "${_raw_items[@]}"; do
+    item="${item//[[:space:]]/}"
+    if [[ -n "$item" ]]; then
+      target_ref+=("$item")
+    fi
+  done
+}
+
+reorder_configs_by_estimated_cost() {
+  local runtime_root="$1"
+  shift
+  "$PYTHON_BIN" - "$runtime_root" "$@" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import yaml
+
+runtime_root = Path(sys.argv[1])
+config_names = sys.argv[2:]
+
+def estimate_cost(cfg: dict) -> float:
+    train_cfg = cfg.get("train", {})
+    model_cfg = cfg.get("model", {})
+    data_cfg = cfg.get("data", {})
+    model_name = str(model_cfg.get("name", "")).strip().lower()
+    epochs = float(train_cfg.get("epochs", 1) or 1)
+    seq_len = float(data_cfg.get("seq_len", 128) or 128)
+    pred_len = float(data_cfg.get("pred_len", 10) or 10)
+    num_layers = float(model_cfg.get("num_layers", 1) or 1)
+
+    score = epochs
+    score *= max(seq_len / 128.0, 0.5)
+    score *= max(pred_len / 10.0, 0.5)
+    score *= 1.0 + 0.15 * max(num_layers - 1.0, 0.0)
+
+    if model_name == "persistence":
+        score *= 0.05
+    elif model_name in {"lstm", "gru", "tcn"}:
+        score *= 0.9
+    elif model_name == "transformer":
+        score *= 1.15
+    elif model_name in {"lite_xlstm", "ccg_xlstm"}:
+        score *= 1.2
+    elif model_name == "vmd_ccg_xlstm":
+        score *= 1.45
+
+    vmd_cfg = cfg.get("vmd", {})
+    if isinstance(vmd_cfg, dict) and bool(vmd_cfg.get("enabled", False)):
+        score *= 1.15 + 0.05 * max(float(vmd_cfg.get("K", 3) or 3) - 3.0, 0.0)
+
+    physics_cfg = cfg.get("physics", {})
+    if isinstance(physics_cfg, dict) and bool(physics_cfg.get("enabled", False)):
+        score *= 1.12
+
+    if bool(model_cfg.get("use_state_mixer", False)):
+        score *= 1.03
+
+    return float(score)
+
+ranked: list[tuple[float, str]] = []
+for name in config_names:
+    path = runtime_root / f"{name}.yaml"
+    with path.open("r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    ranked.append((estimate_cost(cfg), name))
+
+for _, name in sorted(ranked, key=lambda item: (-item[0], item[1])):
+    print(name)
+PY
+}
+
+TRAIN_GPU_IDS_TEXT="${TRAIN_GPU_IDS:-${CUDA_VISIBLE_DEVICES:-0,1}}"
+TRAIN_MAX_CONCURRENT="${TRAIN_MAX_CONCURRENT:-0}"
+trim_csv_into_array "$TRAIN_GPU_IDS_TEXT" TRAIN_GPU_IDS_ARRAY
+if [[ ${#TRAIN_GPU_IDS_ARRAY[@]} -eq 0 ]]; then
+  echo "[Error] TRAIN_GPU_IDS is empty after parsing." >&2
+  exit 1
+fi
+if [[ "$TRAIN_MAX_CONCURRENT" == "0" ]]; then
+  TRAIN_MAX_CONCURRENT=${#TRAIN_GPU_IDS_ARRAY[@]}
+fi
+if (( TRAIN_MAX_CONCURRENT <= 0 )); then
+  echo "[Error] TRAIN_MAX_CONCURRENT must be a positive integer." >&2
+  exit 1
+fi
+
+PER_JOB_CPU_CORES=$(( SHIP_MOTION_CPU_CORES / TRAIN_MAX_CONCURRENT ))
+if (( PER_JOB_CPU_CORES < 1 )); then
+  PER_JOB_CPU_CORES=1
+fi
+PER_JOB_SYSTEM_MEMORY_GB=$(( SHIP_MOTION_SYSTEM_MEMORY_GB / TRAIN_MAX_CONCURRENT ))
+if (( PER_JOB_SYSTEM_MEMORY_GB < 1 )); then
+  PER_JOB_SYSTEM_MEMORY_GB=1
+fi
+
+ACTIVE_PIDS=()
+ACTIVE_GPUS=()
+ACTIVE_CFGS=()
+
+terminate_active_jobs() {
+  local pid
+  for pid in "${ACTIVE_PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+  for pid in "${ACTIVE_PIDS[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+}
+
+acquire_free_gpu() {
+  while true; do
+    local gpu_id
+    for gpu_id in "${TRAIN_GPU_IDS_ARRAY[@]}"; do
+      local in_use=0
+      local active_gpu
+      for active_gpu in "${ACTIVE_GPUS[@]}"; do
+        if [[ "$active_gpu" == "$gpu_id" ]]; then
+          in_use=1
+          break
+        fi
+      done
+      if (( in_use == 0 )); then
+        printf '%s\n' "$gpu_id"
+        return 0
+      fi
+    done
+    wait_for_one_training_job
+  done
+}
+
+wait_for_one_training_job() {
+  while true; do
+    local idx
+    for idx in "${!ACTIVE_PIDS[@]}"; do
+      local pid="${ACTIVE_PIDS[$idx]}"
+      if ! kill -0 "$pid" 2>/dev/null; then
+        local gpu_id="${ACTIVE_GPUS[$idx]}"
+        local cfg_name="${ACTIVE_CFGS[$idx]}"
+        local status=0
+        if wait "$pid"; then
+          status=0
+        else
+          status=$?
+        fi
+        unset 'ACTIVE_PIDS[idx]' 'ACTIVE_GPUS[idx]' 'ACTIVE_CFGS[idx]'
+        ACTIVE_PIDS=("${ACTIVE_PIDS[@]}")
+        ACTIVE_GPUS=("${ACTIVE_GPUS[@]}")
+        ACTIVE_CFGS=("${ACTIVE_CFGS[@]}")
+        if (( status != 0 )); then
+          echo "[Error] Training failed: cfg=$cfg_name | gpu=$gpu_id | exit_code=$status" >&2
+          terminate_active_jobs
+          exit "$status"
+        fi
+        return 0
+      fi
+    done
+    sleep 5
+  done
+}
+
+launch_training_job() {
+  local cfg_name="$1"
+  local gpu_id="$2"
+  local log_name="train_${cfg_name}"
+  local log_path="$LOG_ROOT/${log_name}.log"
+  (
+    set -o pipefail
+    task_start_ts=$(date +%s)
+    {
+      print_banner "[Task Start] name=$log_name | stage=train | gpu=$gpu_id | started_at=$(date '+%F %T')"
+      export CUDA_VISIBLE_DEVICES="$gpu_id"
+      export SHIP_MOTION_CPU_CORES="$PER_JOB_CPU_CORES"
+      export SHIP_MOTION_SYSTEM_MEMORY_GB="$PER_JOB_SYSTEM_MEMORY_GB"
+      "$PYTHON_BIN" -m ship_motion.train --config "$RUNTIME_CONFIG_ROOT/${cfg_name}.yaml"
+      task_end_ts=$(date +%s)
+      print_banner "[Task Done] name=$log_name | stage=train | gpu=$gpu_id | elapsed=$(format_duration "$((task_end_ts - task_start_ts))") | log=$log_path"
+    } 2>&1 | tee "$log_path"
+  ) &
+  ACTIVE_PIDS+=("$!")
+  ACTIVE_GPUS+=("$gpu_id")
+  ACTIVE_CFGS+=("$cfg_name")
 }
 
 print_banner "[Run Start] Result3 experiment pipeline | project_root=$PROJECT_ROOT | result_name=$RESULT_NAME | run_group=$RUN_GROUP"
@@ -268,6 +463,7 @@ if [[ -n "$RUN_ONLY" ]]; then
 fi
 
 print_banner "[Selected Configs] ${SELECTED_CONFIGS[*]}"
+print_banner "[Train Parallelism] gpu_ids=${TRAIN_GPU_IDS_ARRAY[*]} | max_concurrent=$TRAIN_MAX_CONCURRENT | per_job_cpu_cores=$PER_JOB_CPU_CORES | per_job_memory_gb=$PER_JOB_SYSTEM_MEMORY_GB"
 
 # 需要 VMD cache 的配置只按唯一 K/alpha 组合构建一次。
 declare -a CACHE_CONFIGS=()
@@ -292,9 +488,20 @@ for cache_cfg in "${CACHE_CONFIGS[@]}"; do
     "$PYTHON_BIN" -m ship_motion.data.vmd --config "$RUNTIME_CONFIG_ROOT/${cache_cfg}.yaml"
 done
 
+mapfile -t SELECTED_CONFIGS < <(reorder_configs_by_estimated_cost "$RUNTIME_CONFIG_ROOT" "${SELECTED_CONFIGS[@]}")
+print_banner "[Dispatch Order] ${SELECTED_CONFIGS[*]}"
+
 for cfg in "${SELECTED_CONFIGS[@]}"; do
-  run_cmd "train_${cfg}" "train" \
-    "$PYTHON_BIN" -m ship_motion.train --config "$RUNTIME_CONFIG_ROOT/${cfg}.yaml"
+  while (( ${#ACTIVE_PIDS[@]} >= TRAIN_MAX_CONCURRENT )); do
+    wait_for_one_training_job
+  done
+  assigned_gpu="$(acquire_free_gpu)"
+  echo "[Dispatch] cfg=$cfg -> gpu=$assigned_gpu"
+  launch_training_job "$cfg" "$assigned_gpu"
+done
+
+while (( ${#ACTIVE_PIDS[@]} > 0 )); do
+  wait_for_one_training_job
 done
 
 if [[ "$SKIP_SUMMARY" != "1" ]]; then

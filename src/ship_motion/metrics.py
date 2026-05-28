@@ -134,6 +134,13 @@ def _to_numpy(value: Any) -> np.ndarray:
     """兼容 torch.Tensor、numpy 数组和普通列表。"""
     if hasattr(value, "detach"):
         value = value.detach()
+    # NumPy 不能直接接收 torch.bfloat16 / 某些半精度张量；
+    # 这里统一先转成 float32，作为指标计算与保存的安全兜底。
+    if hasattr(value, "dtype") and str(getattr(value, "dtype", "")).lower() in {
+        "torch.bfloat16",
+        "torch.float16",
+    }:
+        value = value.float()
     if hasattr(value, "cpu"):
         value = value.cpu()
     if hasattr(value, "numpy"):
