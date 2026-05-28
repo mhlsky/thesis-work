@@ -93,6 +93,26 @@ bash scripts/run_result4_experiments.sh . result4
 - smoke test 应使用极小样本、极少 epoch/step、小 batch，并把临时输出写入 `outputs/`。
 - 正式训练、消融和完整评估默认写入 `results/<result_name>/`，便于归档和重画图表。
 
+## 训练脚本的硬件感知默认值
+
+- 训练入口现在支持 `batch_size / num_workers / prefetch_factor / precision = auto`。
+- 正式 Linux / Windows 训练脚本会自动加载：
+  - `scripts/server_train_env.sh`
+  - `scripts/server_train_env.ps1`
+- 当前默认面向 **1 卡 40GB GPU + 12 核 CPU + 32GB 内存** 的服务器档位：
+  - 模型相关 `batch_size` 会按模型族自动放大；
+  - `num_workers` 会按 CPU / 内存自动推断；
+  - CUDA 且支持时会优先使用 `bf16`，否则回退到 `fp32`。
+- 如果后续换机器，可在运行前临时覆盖：
+
+```bash
+export SHIP_MOTION_HW_PROFILE=single_gpu_24g
+export SHIP_MOTION_GPU_MEMORY_GB=24
+export SHIP_MOTION_CPU_CORES=8
+export SHIP_MOTION_SYSTEM_MEMORY_GB=24
+export SHIP_MOTION_PRECISION=fp32
+```
+
 ## 文档入口
 
 - 总体方案：`docs/project_overview.md`

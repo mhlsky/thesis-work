@@ -16,6 +16,10 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from ship_motion.data.dataset import DEFAULT_CONFIG_PATH, build_datasets
+from ship_motion.hardware import (
+    apply_hardware_aware_training_defaults,
+    autocast_context,
+)
 from ship_motion.losses.physics import physics_loss
 from ship_motion.losses.vmd_loss import standardize_y_modes, vmd_aux_loss
 from ship_motion.metrics import compute_metrics, roll_consistency_rmse, smoothness_metric
@@ -100,6 +104,11 @@ def log_runtime_environment(device: torch.device, repo_root: Path | None = None)
         f"[Env] cuda_available={torch.cuda.is_available()} | "
         f"cuda_device_count={torch.cuda.device_count()} | "
         f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<not-set>')}"
+    )
+    print(
+        f"[Env] SHIP_MOTION_HW_PROFILE={os.environ.get('SHIP_MOTION_HW_PROFILE', '<not-set>')} | "
+        f"OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS', '<not-set>')} | "
+        f"MKL_NUM_THREADS={os.environ.get('MKL_NUM_THREADS', '<not-set>')}"
     )
     if torch.cuda.is_available():
         current_device = torch.cuda.current_device()
@@ -235,6 +244,7 @@ def evaluate_model(
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
     non_blocking: bool = False,
+    precision: str = "fp32",
     show_progress: bool = False,
     progress_desc: str | None = None,
 ) -> tuple[dict[str, float], float]:
@@ -249,6 +259,7 @@ def evaluate_model(
         physics_cfg=physics_cfg,
         max_steps=max_steps,
         non_blocking=non_blocking,
+        precision=precision,
         collect_predictions=False,
         show_progress=show_progress,
         progress_desc=progress_desc,
@@ -266,6 +277,7 @@ def evaluate_model_with_predictions(
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
     non_blocking: bool = False,
+    precision: str = "fp32",
     collect_predictions: bool = True,
     show_progress: bool = False,
     progress_desc: str | None = None,
@@ -287,16 +299,17 @@ def evaluate_model_with_predictions(
             if max_steps is not None and step > max_steps:
                 break
             batch = move_batch_to_device(batch, device, non_blocking=non_blocking)
-            output = model(batch["x"], batch=batch)
-            y_hat, loss, _, _ = compute_model_losses(
-                model_output=output,
-                batch=batch,
-                criterion=criterion,
-                scaler=scaler,
-                y_std=scaler.y_std,
-                lambda_vmd=lambda_vmd,
-                physics_cfg=physics_cfg,
-            )
+            with autocast_context(device=device, precision=precision):
+                output = model(batch["x"], batch=batch)
+                y_hat, loss, _, _ = compute_model_losses(
+                    model_output=output,
+                    batch=batch,
+                    criterion=criterion,
+                    scaler=scaler,
+                    y_std=scaler.y_std,
+                    lambda_vmd=lambda_vmd,
+                    physics_cfg=physics_cfg,
+                )
             losses.append(float(loss.item()))
             avg_loss = float(sum(losses) / len(losses))
             if progress_bar is not None:
@@ -560,19 +573,21 @@ def evaluate_from_config(
 ) -> dict[str, dict[str, float]]:
     """独立评估命令入口。"""
     config = load_yaml(config_path)
+    initial_train_cfg = config.get("train", {})
+    device = resolve_device(str(initial_train_cfg.get("device", "auto")))
+    apply_hardware_aware_training_defaults(config, device=device)
     if smoke:
         apply_smoke_overrides(config)
 
-    set_seed(int(config.get("train", {}).get("seed", 42)))
     train_cfg = config.get("train", {})
-    device = resolve_device(str(train_cfg.get("device", "auto")))
+    set_seed(int(train_cfg.get("seed", 42)))
     repo_root = Path(config["__config_path__"]).resolve().parent.parent
     log_runtime_environment(device=device, repo_root=repo_root)
     bundle = build_datasets(config, smoke=False)
     loader_settings = resolve_loader_settings(train_cfg, device)
     loaders = build_loaders(
         bundle=bundle,
-        batch_size=int(train_cfg.get("batch_size", 128)),
+        batch_size=int(train_cfg.get("batch_size", 32)),
         num_workers=loader_settings["num_workers"],
         pin_memory=loader_settings["pin_memory"],
         persistent_workers=loader_settings["persistent_workers"],
@@ -596,6 +611,7 @@ def evaluate_from_config(
             physics_cfg=physics_cfg,
             max_steps=train_cfg.get("max_eval_steps"),
             non_blocking=loader_settings["non_blocking"],
+            precision=str(train_cfg.get("precision", "fp32")),
             collect_predictions=save_predictions,
             show_progress=True,
             progress_desc=f"eval[{split_name}]",
@@ -627,6 +643,7 @@ def apply_smoke_overrides(config: dict[str, Any]) -> None:
     train_cfg["persistent_workers"] = False
     train_cfg["prefetch_factor"] = None
     train_cfg["non_blocking"] = False
+    train_cfg["precision"] = "fp32"
     train_cfg["max_eval_steps"] = 2
     apply_vmd_smoke_overrides(config)
 

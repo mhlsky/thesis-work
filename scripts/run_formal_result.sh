@@ -11,6 +11,7 @@ set -euo pipefail
 PROJECT_ROOT="${1:-$PWD}"
 RESULT_NAME="${2:-result_2}"
 cd "$PROJECT_ROOT"
+source "$PROJECT_ROOT/scripts/server_train_env.sh"
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 RESULT_DIR="$PROJECT_ROOT/results/$RESULT_NAME"

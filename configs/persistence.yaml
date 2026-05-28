@@ -31,7 +31,7 @@ data:
 train:
   # 随机种子主要影响 DataLoader 的打乱顺序等非模型部分。
   seed: 42
-  batch_size: 128
+  batch_size: auto
 
   # Persistence 不依赖 epoch 收敛，但这里保留统一字段，
   # 方便整个训练/评估框架共用同一套配置结构。
@@ -40,11 +40,12 @@ train:
   weight_decay: 0.0
   grad_clip: 1.0
   early_stop_patience: 1
-  num_workers: 4
+  num_workers: auto
   pin_memory: auto
   persistent_workers: auto
-  prefetch_factor: 2
+  prefetch_factor: auto
   non_blocking: auto
+  precision: auto
   device: auto
   max_train_steps_per_epoch: null
   max_eval_steps: null

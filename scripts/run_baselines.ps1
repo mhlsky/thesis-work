@@ -29,6 +29,7 @@ param(
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
+. (Join-Path $scriptDir "server_train_env.ps1")
 
 Push-Location $repoRoot
 try {

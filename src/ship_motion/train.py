@@ -32,6 +32,11 @@ from ship_motion.evaluate import (
     resolve_device,
     save_predictions_npz,
 )
+from ship_motion.hardware import (
+    apply_hardware_aware_training_defaults,
+    autocast_context,
+    build_grad_scaler,
+)
 from ship_motion.models import build_model_from_config
 from ship_motion.utils import ensure_dir, load_yaml, save_json, set_seed
 
@@ -84,12 +89,14 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     scaler: Any | None = None,
+    grad_scaler: Any | None = None,
     y_std: Sequence[float] | None = None,
     lambda_vmd: float = 0.0,
     physics_cfg: dict[str, Any] | None = None,
     grad_clip: float | None = None,
     max_steps: int | None = None,
     non_blocking: bool = False,
+    precision: str = "fp32",
     epoch: int | None = None,
     total_epochs: int | None = None,
     show_progress: bool = True,
@@ -111,23 +118,31 @@ def train_one_epoch(
             break
         batch = move_batch_to_device(batch, device, non_blocking=non_blocking)
         optimizer.zero_grad(set_to_none=True)
-        output = model(batch["x"], batch=batch)
-        _, loss, _, _ = compute_model_losses(
-            model_output=output,
-            batch=batch,
-            criterion=criterion,
-            scaler=scaler,
-            y_std=y_std,
-            lambda_vmd=lambda_vmd,
-            physics_cfg=physics_cfg,
-        )
-        loss.backward()
+        with autocast_context(device=device, precision=precision):
+            output = model(batch["x"], batch=batch)
+            _, loss, _, _ = compute_model_losses(
+                model_output=output,
+                batch=batch,
+                criterion=criterion,
+                scaler=scaler,
+                y_std=y_std,
+                lambda_vmd=lambda_vmd,
+                physics_cfg=physics_cfg,
+            )
 
-        # 梯度裁剪对 RNN 类模型尤其有帮助，可以降低梯度爆炸风险。
-        if grad_clip is not None and grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-
-        optimizer.step()
+        if grad_scaler is not None and grad_scaler.is_enabled():
+            grad_scaler.scale(loss).backward()
+            if grad_clip is not None and grad_clip > 0:
+                grad_scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
+        else:
+            loss.backward()
+            # 梯度裁剪对 RNN 类模型尤其有帮助，可以降低梯度爆炸风险。
+            if grad_clip is not None and grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
         losses.append(float(loss.item()))
         avg_loss = float(sum(losses) / len(losses))
         if progress_bar is not None:
@@ -156,6 +171,7 @@ def validate(
     physics_cfg: dict[str, Any] | None = None,
     max_steps: int | None = None,
     non_blocking: bool = False,
+    precision: str = "fp32",
     show_progress: bool = False,
     progress_desc: str | None = None,
 ) -> tuple[dict[str, float], float]:
@@ -170,6 +186,7 @@ def validate(
         physics_cfg=physics_cfg,
         max_steps=max_steps,
         non_blocking=non_blocking,
+        precision=precision,
         show_progress=show_progress,
         progress_desc=progress_desc,
     )
@@ -178,12 +195,16 @@ def validate(
 def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     """训练并评估一个 Step 02 基线模型。"""
     runtime_config = copy.deepcopy(config)
+    initial_train_cfg = runtime_config.get("train", {})
+    device = resolve_device(str(initial_train_cfg.get("device", "auto")))
+    hardware_snapshot = apply_hardware_aware_training_defaults(runtime_config, device=device)
     if smoke:
         apply_smoke_overrides(runtime_config)
 
     train_cfg = runtime_config.get("train", {})
     set_seed(int(train_cfg.get("seed", 42)))
-    device = resolve_device(str(train_cfg.get("device", "auto")))
+    precision = str(train_cfg.get("precision", "fp32"))
+    grad_scaler = build_grad_scaler(device=device, precision=precision)
     repo_root = Path(runtime_config["__config_path__"]).resolve().parent.parent
     total_train_start = time.perf_counter()
     log_runtime_environment(device=device, repo_root=repo_root)
@@ -201,7 +222,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
     loader_settings = resolve_loader_settings(train_cfg, device)
     loaders = build_loaders(
         bundle=bundle,
-        batch_size=int(train_cfg.get("batch_size", 128)),
+        batch_size=int(train_cfg.get("batch_size", 32)),
         num_workers=loader_settings["num_workers"],
         pin_memory=loader_settings["pin_memory"],
         persistent_workers=loader_settings["persistent_workers"],
@@ -232,6 +253,13 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
         f"train_windows={len(bundle['train'])} | val_windows={len(bundle['val'])}"
     )
     print(
+        f"[Run Start] hardware_profile={runtime_config.get('hardware', {}).get('resolved_profile', hardware_snapshot.profile)} | "
+        f"gpu_count={runtime_config.get('hardware', {}).get('detected_gpu_count', hardware_snapshot.gpu_count)} | "
+        f"gpu_memory_gb={runtime_config.get('hardware', {}).get('detected_gpu_memory_gb', 'n/a')} | "
+        f"cpu_cores={runtime_config.get('hardware', {}).get('detected_cpu_cores', hardware_snapshot.cpu_cores)} | "
+        f"precision={precision}"
+    )
+    print(
         f"[Run Start] num_workers={loader_settings['num_workers']} | "
         f"pin_memory={loader_settings['pin_memory']} | "
         f"persistent_workers={loader_settings['persistent_workers']} | "
@@ -254,6 +282,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             physics_cfg=physics_cfg,
             max_steps=max_eval_steps,
             non_blocking=loader_settings["non_blocking"],
+            precision=precision,
             show_progress=True,
             progress_desc="eval[val]",
         )
@@ -314,12 +343,14 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             optimizer=optimizer,
             device=device,
             scaler=bundle["scaler"],
+            grad_scaler=grad_scaler,
             y_std=bundle["scaler"].y_std,
             lambda_vmd=effective_lambda_vmd,
             physics_cfg=effective_physics_cfg,
             grad_clip=float(grad_clip) if grad_clip is not None else None,
             max_steps=max_train_steps,
             non_blocking=loader_settings["non_blocking"],
+            precision=precision,
             epoch=epoch,
             total_epochs=epochs,
             show_progress=True,
@@ -336,6 +367,7 @@ def fit(config: dict[str, Any], smoke: bool = False) -> dict[str, Any]:
             physics_cfg=effective_physics_cfg,
             max_steps=max_eval_steps,
             non_blocking=loader_settings["non_blocking"],
+            precision=precision,
             show_progress=True,
             progress_desc="eval[val]",
         )
@@ -413,7 +445,9 @@ def finalize_and_evaluate(
 ) -> dict[str, Any]:
     """保存 val / routine test / OOD test 指标。"""
     data_cfg = config["data"]
-    max_eval_steps = config.get("train", {}).get("max_eval_steps")
+    train_cfg = config.get("train", {})
+    max_eval_steps = train_cfg.get("max_eval_steps")
+    precision = str(train_cfg.get("precision", "fp32"))
     results: dict[str, Any] = {}
     for split in ["val", "routine_test", "ood_test"]:
         collect_predictions = split in {"routine_test", "ood_test"}
@@ -430,7 +464,8 @@ def finalize_and_evaluate(
             lambda_vmd=float(config.get("vmd", {}).get("lambda_vmd", 0.0)),
             physics_cfg=config.get("physics", {}),
             max_steps=max_eval_steps,
-            non_blocking=resolve_loader_settings(config.get("train", {}), device)["non_blocking"],
+            non_blocking=resolve_loader_settings(train_cfg, device)["non_blocking"],
+            precision=precision,
             collect_predictions=collect_predictions,
             show_progress=True,
             progress_desc=f"eval[{split}]",
@@ -515,6 +550,7 @@ def apply_smoke_overrides(config: dict[str, Any]) -> None:
     train_cfg["persistent_workers"] = False
     train_cfg["prefetch_factor"] = None
     train_cfg["non_blocking"] = False
+    train_cfg["precision"] = "fp32"
     train_cfg["max_train_steps_per_epoch"] = 2
     train_cfg["max_eval_steps"] = 2
     apply_vmd_smoke_overrides(config)

@@ -36,6 +36,7 @@ ROBUST_SEEDS="${ROBUST_SEEDS:-7,42,2026,3407,10007}"
 ROBUST_BASES="${ROBUST_BASES:-e4_ccg_xlstm_base,e4_ccg_phys_s0010_r0050,e4_ccg_phys_s0010_r0000,e4_vmd_ccg_l005_lr5e4_mix,e4_vmd_ccg_l005_lr5e4_nomix,e4_joint_l005_lr5e4_nomix_r0050}"
 
 cd "$PROJECT_ROOT"
+source "$PROJECT_ROOT/scripts/server_train_env.sh"
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 RESULT_DIR="$PROJECT_ROOT/results/$RESULT_NAME"

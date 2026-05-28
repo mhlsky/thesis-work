@@ -61,7 +61,9 @@ train:
   seed: 42
 
   # 每个 batch 含多少个样本。
-  batch_size: 128
+  # auto 表示：根据模型类型、窗口长度和当前机器硬件自动估计。
+  # 对 1x40GB GPU / 12 核 CPU / 32GB 内存服务器，会自动放大到更合适的正式值。
+  batch_size: auto
 
   # 训练多少个 epoch。
   # 正式实验可以较大，smoke test 会自动覆盖成更小的值。
@@ -83,9 +85,9 @@ train:
   early_stop_patience: 8
 
   # DataLoader 等并行读取数据时的工作进程数。
-  # Linux + CUDA 服务器训练时建议大于 0，让 CPU 提前准备 batch。
-  # smoke test 会自动改回 0，避免本地小机器压力过大。
-  num_workers: 4
+  # auto 表示：根据 CPU 核数和内存自动推断。
+  # 例如 12 核 / 32GB 服务器会默认落到更适合单卡训练的 worker 数。
+  num_workers: auto
 
   # 是否把 batch 先放进 page-locked memory。
   # auto 表示：当 device 最终解析成 CUDA 时自动开启，加快 CPU -> GPU 拷贝。
@@ -96,12 +98,16 @@ train:
   persistent_workers: auto
 
   # 每个 worker 预取多少个 batch。
-  # 只有 num_workers > 0 时生效；null 表示使用 PyTorch 默认行为。
-  prefetch_factor: 2
+  # auto 表示：根据 worker 数自动设成 2 或 4。
+  prefetch_factor: auto
 
   # 是否允许 non_blocking 张量搬运。
   # auto 表示：CUDA + pin_memory 时自动开启。
   non_blocking: auto
+
+  # 训练精度。
+  # auto 表示：CUDA 且支持 bf16 时优先用 bf16，否则回退到 fp32。
+  precision: auto
 
   # 训练设备。
   # auto 表示：有 CUDA 就用 CUDA，没有就自动回退到 CPU。

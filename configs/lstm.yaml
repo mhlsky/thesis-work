@@ -21,7 +21,7 @@ data:
 
 train:
   seed: 42
-  batch_size: 128
+  batch_size: auto
 
   # 正式 baseline 训练轮数。
   # smoke 模式会自动将它缩小到 1。
@@ -35,11 +35,12 @@ train:
   grad_clip: 1.0
   early_stop_patience: 8
 
-  num_workers: 4
+  num_workers: auto
   pin_memory: auto
   persistent_workers: auto
-  prefetch_factor: 2
+  prefetch_factor: auto
   non_blocking: auto
+  precision: auto
   device: auto
   max_train_steps_per_epoch: null
   max_eval_steps: null
