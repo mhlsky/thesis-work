@@ -23,6 +23,8 @@ from itertools import islice
 from pathlib import Path
 from typing import Any, Sequence
 
+import numpy as np
+
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -173,15 +175,11 @@ class ShipWindowDataset:
         # 记录输入窗口最后一个真实状态，很多序列模型会拿它做解码起点。
         last_state_raw = cached["y"][start + self.seq_len - 1]
 
-        # 训练通常使用标准化后的数据，数值更稳定。
-        x = self.scaler.transform_x(x_raw)
-        y = self.scaler.transform_y(y_raw)
-
         return {
-            "x": _to_tensor(x),
-            "x_exog": _to_tensor(_take_columns(x, self.exog_indices)),
-            "x_state": _to_tensor(_take_columns(x, self.state_indices)),
-            "y": _to_tensor(y),
+            "x": _to_tensor(x_raw),
+            "x_exog": _to_tensor(cached["x_exog"][start : start + self.seq_len]),
+            "x_state": _to_tensor(cached["x_state"][start : start + self.seq_len]),
+            "y": _to_tensor(cached["y_std"][start : start + self.seq_len + self.pred_len][self.seq_len :]),
             "y_raw": _to_tensor(y_raw),
             "last_state_raw": _to_tensor(last_state_raw),
             "file": str(cached["file"]),
@@ -205,6 +203,10 @@ class ShipWindowDataset:
         for file_idx, file in enumerate(self.files):
             # 每个 CSV 只读一次，读取结果缓存下来。
             cached = _read_csv_arrays(file, self.input_cols, self.target_cols)
+            cached["x"] = _ensure_float32_array(self.scaler.transform_x(cached["x"]))
+            cached["y_std"] = _ensure_float32_array(self.scaler.transform_y(cached["y"]))
+            cached["x_exog"] = cached["x"][:, self.exog_indices] if self.exog_indices else cached["x"][:, :0]
+            cached["x_state"] = cached["x"][:, self.state_indices] if self.state_indices else cached["x"][:, :0]
             if self.vmd_enabled:
                 cached["y_modes"] = _load_vmd_modes(
                     file=file,
@@ -486,7 +488,11 @@ def _read_csv_arrays(
             x_rows.append(_read_float_values(row, input_cols, file, row_idx))
             y_rows.append(_read_float_values(row, target_cols, file, row_idx))
 
-    return {"file": Path(file), "x": x_rows, "y": y_rows}
+    return {
+        "file": Path(file),
+        "x": np.asarray(x_rows, dtype=np.float32),
+        "y": np.asarray(y_rows, dtype=np.float32),
+    }
 
 
 def _load_vmd_modes(
@@ -504,13 +510,6 @@ def _load_vmd_modes(
     """
     if cache_dir is None:
         raise ValueError("cache_dir must not be None when loading VMD modes.")
-
-    try:
-        import numpy as np
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "NumPy is required for loading VMD cache. Please run `uv sync` first."
-        ) from exc
 
     cache_path = cache_dir / f"{Path(file).stem}.npz"
     if not cache_path.exists():
@@ -542,7 +541,7 @@ def _load_vmd_modes(
         raise ValueError(
             f"VMD cache K mismatch for {cache_path}: expected {expected_k}, got {cached_k}"
         )
-    return modes.tolist()
+    return np.asarray(modes, dtype=np.float32)
 
 
 def _limited_files(data_dir: str | Path, max_files: int | None) -> list[Path]:
@@ -594,8 +593,16 @@ def _to_tensor(data: Any) -> Any:
     """
     torch = _try_import_torch()
     if torch is not None:
+        if isinstance(data, np.ndarray):
+            return torch.from_numpy(np.ascontiguousarray(data))
         return torch.tensor(data, dtype=torch.float32)
     return ArrayTensor(data)
+
+
+def _ensure_float32_array(data: Any) -> np.ndarray:
+    """把输入统一整理成连续的 float32 NumPy 数组。"""
+    array = np.asarray(data, dtype=np.float32)
+    return np.ascontiguousarray(array)
 
 
 def _shape(value: Any) -> Any:

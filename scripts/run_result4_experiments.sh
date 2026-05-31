@@ -10,12 +10,15 @@ set -euo pipefail
 # 4. 多随机种子 robust 组单独运行，不默认混入主表；
 # 5. 所有正式输出统一写到 results/result4/ 下。
 #
-# 默认运行 full（单 seed 主实验 + robust 多 seed）。
+# 默认运行 next_round（下一轮精简版主实验，不默认带 robust）。
 # 可选环境变量：
-# - RUN_GROUP=full|all|baseline|phys_main|phys_diag|phys|vmd_main|vmd_diag|vmd|joint|robust
+# - RUN_GROUP=next_round|main_lite|diag|full|all|baseline|phys_main|phys_diag|phys|vmd_main|vmd_diag|vmd|joint|robust
 # - RUN_ONLY=cfg1,cfg2               只跑指定 runtime config（不带 .yaml），优先级最高
 # - PYTHON_BIN=python                指定解释器，默认使用当前激活环境里的 python
 # - SKIP_SUMMARY=1                   跳过默认主表汇总
+# - RESULT4_VMD_BATCH_SIZE=768       为 VMD / Joint 类重模型设置默认 batch size；仍可被 SHIP_MOTION_BATCH_SIZE 覆盖
+# - REUSE_VMD_CACHE_ROOT=path        复用已有 VMD cache 根目录，并把相关 runtime config 指向该目录
+# - SKIP_VMD_CACHE_BUILD=1           已确认 cache 完整时，跳过脚本内的 VMD cache 构建阶段
 # - ROBUST_SEEDS=7,42,2026,...       覆盖 robust 组默认种子
 # - ROBUST_BASES=stem1,stem2,...     覆盖 robust 组默认基配置
 # - TRAIN_GPU_IDS=0,1                训练阶段允许调度的 GPU 列表；默认使用 0,1
@@ -24,18 +27,25 @@ set -euo pipefail
 # 用法：
 #   conda activate your_env
 #   bash scripts/run_result4_experiments.sh . result4
+#   RUN_GROUP=next_round bash scripts/run_result4_experiments.sh . result4
+#   RUN_GROUP=main_lite bash scripts/run_result4_experiments.sh . result4
+#   RUN_GROUP=diag bash scripts/run_result4_experiments.sh . result4
 #   RUN_GROUP=all bash scripts/run_result4_experiments.sh . result4
 #   RUN_GROUP=phys bash scripts/run_result4_experiments.sh . result4
 #   RUN_GROUP=robust ROBUST_SEEDS=7,42,1234 bash scripts/run_result4_experiments.sh . result4
 
 PROJECT_ROOT="${1:-$PWD}"
 RESULT_NAME="${2:-result4}"
-RUN_GROUP="${RUN_GROUP:-full}"
+RUN_GROUP="${RUN_GROUP:-next_round}"
 RUN_ONLY="${RUN_ONLY:-}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 SKIP_SUMMARY="${SKIP_SUMMARY:-0}"
+RESULT4_VMD_BATCH_SIZE="${RESULT4_VMD_BATCH_SIZE:-768}"
+REUSE_VMD_CACHE_ROOT="${REUSE_VMD_CACHE_ROOT:-}"
+SKIP_VMD_CACHE_BUILD="${SKIP_VMD_CACHE_BUILD:-0}"
+DEFAULT_REUSE_VMD_CACHE_ROOT="results/result4_single_gpu/outputs/cache/vmd/K3_alpha2000"
 ROBUST_SEEDS="${ROBUST_SEEDS:-7,42,2026,3407,10007}"
-ROBUST_BASES="${ROBUST_BASES:-e4_ccg_xlstm_base,e4_ccg_phys_s0010_r0050,e4_ccg_phys_s0010_r0000,e4_vmd_ccg_l005_lr5e4_mix,e4_vmd_ccg_l005_lr5e4_nomix,e4_joint_l005_lr5e4_nomix_r0050}"
+ROBUST_BASES="${ROBUST_BASES:-e4_ccg_xlstm_base,e4_ccg_phys_s0010_r0075,e4_vmd_ccg_l005_lr3e4_nomix,e4_vmd_ccg_l003_lr5e4_nomix,e4_joint_l005_lr3e4_nomix_s0010_r0050}"
 
 cd "$PROJECT_ROOT"
 source "$PROJECT_ROOT/scripts/server_train_env.sh"
@@ -77,6 +87,20 @@ run_cmd() {
   local task_end_ts
   task_end_ts=$(date +%s)
   print_banner "[Task Done] name=$name | stage=$stage_label | elapsed=$(format_duration "$((task_end_ts - task_start_ts))") | log=$LOG_ROOT/${name}.log"
+}
+
+trim_csv_into_array() {
+  local text="$1"
+  local -n target_ref="$2"
+  target_ref=()
+  IFS=',' read -r -a _raw_items <<< "$text"
+  local item
+  for item in "${_raw_items[@]}"; do
+    item="${item//[[:space:]]/}"
+    if [[ -n "$item" ]]; then
+      target_ref+=("$item")
+    fi
+  done
 }
 
 reorder_configs_by_estimated_cost() {
@@ -274,24 +298,25 @@ array_contains() {
   return 1
 }
 
-trim_csv_into_array() {
-  local text="$1"
-  local -n target_ref="$2"
-  target_ref=()
-  IFS=',' read -r -a _raw_items <<< "$text"
-  local item
-  for item in "${_raw_items[@]}"; do
-    item="${item//[[:space:]]/}"
-    if [[ -n "$item" ]]; then
-      target_ref+=("$item")
-    fi
-  done
-}
+if [[ -z "$REUSE_VMD_CACHE_ROOT" && -d "$PROJECT_ROOT/$DEFAULT_REUSE_VMD_CACHE_ROOT/train" && -d "$PROJECT_ROOT/$DEFAULT_REUSE_VMD_CACHE_ROOT/validation" && -d "$PROJECT_ROOT/$DEFAULT_REUSE_VMD_CACHE_ROOT/routine_test" && -d "$PROJECT_ROOT/$DEFAULT_REUSE_VMD_CACHE_ROOT/ood_test" ]]; then
+  REUSE_VMD_CACHE_ROOT="$DEFAULT_REUSE_VMD_CACHE_ROOT"
+fi
+if [[ -n "$REUSE_VMD_CACHE_ROOT" && "$SKIP_VMD_CACHE_BUILD" == "0" ]]; then
+  SKIP_VMD_CACHE_BUILD=1
+fi
+if [[ "$SKIP_VMD_CACHE_BUILD" == "1" && -z "$REUSE_VMD_CACHE_ROOT" ]]; then
+  echo "[Error] SKIP_VMD_CACHE_BUILD=1 requires REUSE_VMD_CACHE_ROOT to be set." >&2
+  exit 1
+fi
+if [[ -n "$REUSE_VMD_CACHE_ROOT" && ! -d "$PROJECT_ROOT/$REUSE_VMD_CACHE_ROOT" && ! -d "$REUSE_VMD_CACHE_ROOT" ]]; then
+  echo "[Error] REUSE_VMD_CACHE_ROOT does not exist: $REUSE_VMD_CACHE_ROOT" >&2
+  exit 1
+fi
 
-print_banner "[Run Start] Result4 experiment pipeline | project_root=$PROJECT_ROOT | result_name=$RESULT_NAME | run_group=$RUN_GROUP"
+print_banner "[Run Start] Result4 experiment pipeline | project_root=$PROJECT_ROOT | result_name=$RESULT_NAME | run_group=$RUN_GROUP | result4_vmd_batch_size=$RESULT4_VMD_BATCH_SIZE | reuse_vmd_cache_root=${REUSE_VMD_CACHE_ROOT:-<none>} | skip_vmd_cache_build=$SKIP_VMD_CACHE_BUILD"
 
 run_cmd "prepare_result4_runtime_configs" "prepare_configs" \
-  "$PYTHON_BIN" - "$PROJECT_ROOT" "$RESULT_NAME" "$RUNTIME_CONFIG_ROOT" "$ROBUST_SEEDS" "$ROBUST_BASES" <<'PY'
+  "$PYTHON_BIN" - "$PROJECT_ROOT" "$RESULT_NAME" "$RUNTIME_CONFIG_ROOT" "$ROBUST_SEEDS" "$ROBUST_BASES" "$RESULT4_VMD_BATCH_SIZE" "$REUSE_VMD_CACHE_ROOT" <<'PY'
 from __future__ import annotations
 
 import copy
@@ -305,6 +330,8 @@ result_name = sys.argv[2]
 runtime_config_root = Path(sys.argv[3]).resolve()
 robust_seeds = [int(item.strip()) for item in sys.argv[4].split(",") if item.strip()]
 robust_bases = [item.strip() for item in sys.argv[5].split(",") if item.strip()]
+result4_vmd_batch_size = int(sys.argv[6])
+reuse_vmd_cache_root = sys.argv[7].strip()
 
 configs_root = project_root / "configs"
 output_dir = f"results/{result_name}/outputs"
@@ -333,6 +360,12 @@ def with_common_output(cfg: dict, run_name: str) -> dict:
     return rewritten
 
 
+def resolve_vmd_cache_root(*, K: int, alpha: int) -> str:
+    if reuse_vmd_cache_root:
+        return reuse_vmd_cache_root
+    return f"results/{result_name}/outputs/cache/vmd/K{K}_alpha{alpha}"
+
+
 def build_physics_section(
     *,
     lambda_smooth: float,
@@ -340,6 +373,7 @@ def build_physics_section(
     warmup_epochs: int = 8,
     normalize_by_target_std: bool = True,
     roll_integration: str = "trapezoid",
+    smoothness_target_cols: list[str] | None = None,
 ) -> dict:
     return {
         "enabled": True,
@@ -347,7 +381,7 @@ def build_physics_section(
         "lambda_roll": float(lambda_roll),
         "dt": 1.0,
         "warmup_epochs": int(warmup_epochs),
-        "smoothness_target_cols": ["p", "r", "phi"],
+        "smoothness_target_cols": list(smoothness_target_cols or ["p", "r", "phi"]),
         "normalize_by_target_std": bool(normalize_by_target_std),
         "roll_integration": str(roll_integration),
         "p_col": "p",
@@ -372,7 +406,7 @@ def build_vmd_section(
         "tol": 1.0e-7,
         "lambda_vmd": float(lambda_vmd),
         "warmup_epochs": int(warmup_epochs),
-        "cache_root": f"results/{result_name}/outputs/cache/vmd/K{K}_alpha{alpha}",
+        "cache_root": resolve_vmd_cache_root(K=K, alpha=alpha),
     }
 
 
@@ -385,6 +419,7 @@ def build_phys_config(
     warmup_epochs: int = 8,
     normalize_by_target_std: bool = True,
     roll_integration: str = "trapezoid",
+    smoothness_target_cols: list[str] | None = None,
 ) -> dict:
     cfg = with_common_output(ccg_base, run_name)
     cfg["physics"] = build_physics_section(
@@ -393,6 +428,7 @@ def build_phys_config(
         warmup_epochs=warmup_epochs,
         normalize_by_target_std=normalize_by_target_std,
         roll_integration=roll_integration,
+        smoothness_target_cols=smoothness_target_cols,
     )
     return cfg
 
@@ -417,7 +453,9 @@ def build_vmd_config(
         K=K,
         alpha=alpha,
     )
-    cfg.setdefault("train", {})["lr"] = float(lr)
+    train_cfg = cfg.setdefault("train", {})
+    train_cfg["lr"] = float(lr)
+    train_cfg["batch_size"] = int(result4_vmd_batch_size)
     model_cfg = cfg.setdefault("model", {})
     model_cfg["use_state_mixer"] = bool(use_state_mixer)
     model_cfg["state_mixer_hidden_dim"] = int(state_mixer_hidden_dim)
@@ -440,6 +478,7 @@ def build_joint_config(
     physics_warmup_epochs: int = 8,
     normalize_by_target_std: bool = True,
     roll_integration: str = "trapezoid",
+    smoothness_target_cols: list[str] | None = None,
 ) -> dict:
     cfg = build_vmd_config(
         vmd_base=vmd_base,
@@ -459,6 +498,7 @@ def build_joint_config(
         warmup_epochs=physics_warmup_epochs,
         normalize_by_target_std=normalize_by_target_std,
         roll_integration=roll_integration,
+        smoothness_target_cols=smoothness_target_cols,
     )
     return cfg
 
@@ -518,6 +558,13 @@ result4_configs["e4_ccg_phys_s0010_r0050_warm12"] = build_phys_config(
     lambda_smooth=0.0010,
     lambda_roll=0.0050,
     warmup_epochs=12,
+)
+result4_configs["e4_ccg_phys_s0010_r0075_prphi"] = build_phys_config(
+    ccg_base,
+    "e4_ccg_phys_s0010_r0075_prphi",
+    lambda_smooth=0.0010,
+    lambda_roll=0.0075,
+    smoothness_target_cols=["p", "phi"],
 )
 
 # ------------------------------------------------------------------
@@ -583,6 +630,14 @@ joint_specs = {
 for stem, kwargs in joint_specs.items():
     result4_configs[stem] = build_joint_config(vmd_base, stem, **kwargs)
 
+next_round_joint_specs = {
+    "e4_joint_l005_lr3e4_nomix_r0025": dict(lambda_smooth=0.0, lambda_roll=0.0025, lr=3.0e-4),
+    "e4_joint_l005_lr3e4_nomix_r0050": dict(lambda_smooth=0.0, lambda_roll=0.0050, lr=3.0e-4),
+    "e4_joint_l005_lr3e4_nomix_s0010_r0050": dict(lambda_smooth=0.0010, lambda_roll=0.0050, lr=3.0e-4),
+}
+for stem, kwargs in next_round_joint_specs.items():
+    result4_configs[stem] = build_joint_config(vmd_base, stem, **kwargs)
+
 # ------------------------------------------------------------------
 # 多 seed 组：从当前默认候选克隆，并把 train.seed 改成指定值。
 # ------------------------------------------------------------------
@@ -631,6 +686,15 @@ PHYS_DIAG_CONFIGS=(
   "e4_ccg_phys_s0010_r0050_euler"
   "e4_ccg_phys_s0010_r0050_warm4"
   "e4_ccg_phys_s0010_r0050_warm12"
+  "e4_ccg_phys_s0010_r0075_prphi"
+)
+
+PHYS_LITE_CONFIGS=(
+  "e4_ccg_phys_s0010_r0000"
+  "e4_ccg_phys_s0000_r0025"
+  "e4_ccg_phys_s0000_r0050"
+  "e4_ccg_phys_s0010_r0050"
+  "e4_ccg_phys_s0010_r0075"
 )
 
 VMD_MAIN_CONFIGS=(
@@ -654,11 +718,30 @@ VMD_DIAG_CONFIGS=(
   "e4_vmd_ccg_l005_lr5e4_nomix_a2500"
 )
 
+VMD_LITE_CONFIGS=(
+  "e4_vmd_ccg_l005_lr5e4_mix"
+  "e4_vmd_ccg_l005_lr5e4_nomix"
+  "e4_vmd_ccg_l005_lr3e4_nomix"
+  "e4_vmd_ccg_l005_lr7e4_nomix"
+  "e4_vmd_ccg_l003_lr5e4_nomix"
+  "e4_vmd_ccg_l008_lr5e4_nomix"
+)
+
 JOINT_CONFIGS=(
   "e4_joint_l005_lr5e4_nomix_r0025"
   "e4_joint_l005_lr5e4_nomix_r0050"
   "e4_joint_l005_lr5e4_nomix_s0005_r0025"
   "e4_joint_l005_lr5e4_nomix_s0005_r0050"
+  "e4_joint_l005_lr5e4_nomix_s0010_r0050"
+  "e4_joint_l005_lr5e4_nomix_s0010_r0075"
+  "e4_joint_l005_lr3e4_nomix_r0025"
+  "e4_joint_l005_lr3e4_nomix_r0050"
+  "e4_joint_l005_lr3e4_nomix_s0010_r0050"
+)
+
+JOINT_LITE_CONFIGS=(
+  "e4_joint_l005_lr5e4_nomix_r0025"
+  "e4_joint_l005_lr5e4_nomix_r0050"
   "e4_joint_l005_lr5e4_nomix_s0010_r0050"
   "e4_joint_l005_lr5e4_nomix_s0010_r0075"
 )
@@ -673,6 +756,32 @@ done
 PHYS_CONFIGS=("${BASELINE_CONFIGS[@]}" "${PHYS_MAIN_CONFIGS[@]}" "${PHYS_DIAG_CONFIGS[@]}")
 VMD_CONFIGS=("${BASELINE_CONFIGS[@]}" "${VMD_MAIN_CONFIGS[@]}" "${VMD_DIAG_CONFIGS[@]}")
 JOINT_GROUP_CONFIGS=("${BASELINE_CONFIGS[@]}" "${JOINT_CONFIGS[@]}")
+MAIN_LITE_CONFIGS=(
+  "${BASELINE_CONFIGS[@]}"
+  "${PHYS_LITE_CONFIGS[@]}"
+  "${VMD_LITE_CONFIGS[@]}"
+  "${JOINT_LITE_CONFIGS[@]}"
+)
+DIAG_CONFIGS=(
+  "${BASELINE_CONFIGS[@]}"
+  "e4_ccg_phys_s0010_r0050"
+  "e4_vmd_ccg_l005_lr3e4_nomix"
+  "${PHYS_DIAG_CONFIGS[@]}"
+  "${VMD_DIAG_CONFIGS[@]}"
+)
+
+NEXT_ROUND_CONFIGS=(
+  "${BASELINE_CONFIGS[@]}"
+  "e4_ccg_phys_s0010_r0050"
+  "e4_ccg_phys_s0010_r0075"
+  "e4_ccg_phys_s0010_r0075_prphi"
+  "e4_vmd_ccg_l005_lr3e4_nomix"
+  "e4_vmd_ccg_l003_lr5e4_nomix"
+  "e4_vmd_ccg_l005_lr5e4_nomix"
+  "e4_joint_l005_lr3e4_nomix_r0025"
+  "e4_joint_l005_lr3e4_nomix_r0050"
+  "e4_joint_l005_lr3e4_nomix_s0010_r0050"
+)
 
 ALL_CONFIGS=(
   "${BASELINE_CONFIGS[@]}"
@@ -685,6 +794,15 @@ ALL_CONFIGS=(
 
 SELECTED_CONFIGS=()
 case "$RUN_GROUP" in
+  next_round)
+    SELECTED_CONFIGS=("${NEXT_ROUND_CONFIGS[@]}")
+    ;;
+  main_lite)
+    SELECTED_CONFIGS=("${MAIN_LITE_CONFIGS[@]}")
+    ;;
+  diag)
+    SELECTED_CONFIGS=("${DIAG_CONFIGS[@]}")
+    ;;
   full)
     SELECTED_CONFIGS=("${ALL_CONFIGS[@]}" "${ROBUST_CONFIGS[@]}")
     ;;
@@ -719,7 +837,7 @@ case "$RUN_GROUP" in
     SELECTED_CONFIGS=("${ROBUST_CONFIGS[@]}")
     ;;
   *)
-    echo "[Error] Unsupported RUN_GROUP=$RUN_GROUP. Expected full|all|baseline|phys_main|phys_diag|phys|vmd_main|vmd_diag|vmd|joint|robust." >&2
+    echo "[Error] Unsupported RUN_GROUP=$RUN_GROUP. Expected next_round|main_lite|diag|full|all|baseline|phys_main|phys_diag|phys|vmd_main|vmd_diag|vmd|joint|robust." >&2
     exit 1
     ;;
 esac
@@ -766,6 +884,10 @@ for cfg in "${SELECTED_CONFIGS[@]}"; do
 done
 
 for cache_cfg in "${CACHE_BUILDERS[@]}"; do
+  if [[ "$SKIP_VMD_CACHE_BUILD" == "1" ]]; then
+    echo "[Info] Skip VMD cache build for $cache_cfg because SKIP_VMD_CACHE_BUILD=1 and REUSE_VMD_CACHE_ROOT=$REUSE_VMD_CACHE_ROOT"
+    continue
+  fi
   run_cmd "build_cache_${cache_cfg}" "vmd_cache" \
     "$PYTHON_BIN" -m ship_motion.data.vmd --config "$RUNTIME_CONFIG_ROOT/${cache_cfg}.yaml"
 done

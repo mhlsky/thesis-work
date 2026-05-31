@@ -22,7 +22,13 @@ from ship_motion.hardware import (
 )
 from ship_motion.losses.physics import physics_loss
 from ship_motion.losses.vmd_loss import standardize_y_modes, vmd_aux_loss
-from ship_motion.metrics import compute_metrics, roll_consistency_rmse, smoothness_metric
+from ship_motion.metrics import (
+    compute_metrics,
+    first_step_jump_rmse,
+    max_abs_second_diff_p95,
+    roll_consistency_rmse,
+    smoothness_metric,
+)
 from ship_motion.models import build_model_from_config
 from ship_motion.utils import ensure_dir, load_yaml, save_json, set_seed
 
@@ -336,26 +342,33 @@ def evaluate_model_with_predictions(
     y_true_raw = torch.cat(trues, dim=0)
     last_state_raw = torch.cat(last_states, dim=0)
     metrics = compute_metrics(y_pred_raw, y_true_raw, target_cols)
-    physics_enabled = bool((physics_cfg or {}).get("enabled", False))
-    if physics_enabled:
-        dt = float((physics_cfg or {}).get("dt", 1.0))
-        physics_runtime = resolve_physics_runtime_options(
-            physics_cfg=physics_cfg,
-            target_cols=target_cols,
-            y_std=scaler.y_std,
-        )
-        metrics["smoothness"] = smoothness_metric(
-            y_pred_raw,
-            target_indices=physics_runtime["smoothness_target_indices"],
-        )
-        metrics["roll_consistency_rmse"] = roll_consistency_rmse(
-            y_pred_raw,
-            last_state_raw,
-            dt=dt,
-            p_idx=physics_runtime["p_idx"],
-            phi_idx=physics_runtime["phi_idx"],
-            integration=physics_runtime["roll_integration"],
-        )
+    physics_runtime = resolve_physics_runtime_options(
+        physics_cfg=physics_cfg,
+        target_cols=target_cols,
+        y_std=scaler.y_std,
+    )
+    dt = float((physics_cfg or {}).get("dt", 1.0))
+    metrics["smoothness"] = smoothness_metric(
+        y_pred_raw,
+        target_indices=physics_runtime["smoothness_target_indices"],
+    )
+    metrics["roll_consistency_rmse"] = roll_consistency_rmse(
+        y_pred_raw,
+        last_state_raw,
+        dt=dt,
+        p_idx=physics_runtime["p_idx"],
+        phi_idx=physics_runtime["phi_idx"],
+        integration=physics_runtime["roll_integration"],
+    )
+    metrics["first_step_jump_rmse"] = first_step_jump_rmse(
+        y_pred_raw,
+        last_state_raw,
+        target_indices=physics_runtime["smoothness_target_indices"],
+    )
+    metrics["max_abs_second_diff_p95"] = max_abs_second_diff_p95(
+        y_pred_raw,
+        target_indices=physics_runtime["smoothness_target_indices"],
+    )
     metrics["num_samples"] = int(y_pred_raw.shape[0])
     metrics["num_forecast_steps"] = int(y_pred_raw.shape[1])
     metrics["loss_mse_std"] = float(sum(losses) / len(losses))

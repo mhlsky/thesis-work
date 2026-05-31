@@ -124,6 +124,38 @@ def roll_consistency_rmse(
     return float(np.sqrt(np.mean(np.square(flat))))
 
 
+def first_step_jump_rmse(
+    y_pred_raw: Any,
+    last_state_raw: Any,
+    target_indices: Sequence[int] | None = None,
+) -> float:
+    """衡量预测首步与历史最后一步之间的跳变幅度，越小表示衔接越自然。"""
+    pred = _to_numpy(y_pred_raw).astype(np.float64)
+    last_state = _to_numpy(last_state_raw).astype(np.float64)
+    first_step = pred[:, 0, :]
+    if target_indices:
+        indices = list(target_indices)
+        first_step = first_step[:, indices]
+        last_state = last_state[:, indices]
+    jump = first_step - last_state
+    return float(np.sqrt(np.mean(np.square(jump))))
+
+
+def max_abs_second_diff_p95(
+    y_pred_raw: Any,
+    target_indices: Sequence[int] | None = None,
+) -> float:
+    """统计二阶差分绝对值的 95 分位，用于衡量局部尖峰/异常抖动。"""
+    pred = _to_numpy(y_pred_raw).astype(np.float64)
+    if target_indices:
+        pred = pred[:, :, list(target_indices)]
+    if pred.shape[1] < 3:
+        return 0.0
+    d1 = pred[:, 1:, :] - pred[:, :-1, :]
+    d2 = d1[:, 1:, :] - d1[:, :-1, :]
+    return float(np.percentile(np.abs(d2), 95))
+
+
 def _to_numpy_pair(y_pred: Any, y_true: Any) -> tuple[np.ndarray, np.ndarray]:
     pred = _to_numpy(y_pred)
     true = _to_numpy(y_true)

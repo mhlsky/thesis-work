@@ -2,6 +2,8 @@
 outputs/
 log/
 results/
+runtime_configs_result4/
+runtime_configs_result4_smoke/
 
 # Python bytecode and interpreter caches
 __pycache__/

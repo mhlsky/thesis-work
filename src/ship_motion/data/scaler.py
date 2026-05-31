@@ -281,6 +281,16 @@ def _apply_last_dim(
         std_tensor = array.new_tensor(std).view(*shape)
         return array * std_tensor + mean_tensor if inverse else (array - mean_tensor) / std_tensor
 
+    if isinstance(array, np.ndarray):
+        if array.shape and array.shape[-1] != len(mean):
+            raise ValueError(f"Expected last dimension {len(mean)}, got {array.shape[-1]}")
+        if scaler is None:
+            raise RuntimeError("StandardScaler is not fitted.")
+        original_shape = array.shape
+        matrix = np.asarray(array, dtype=np.float64).reshape(-1, len(mean))
+        transformed = scaler.inverse_transform(matrix) if inverse else scaler.transform(matrix)
+        return transformed.reshape(original_shape).astype(np.float32, copy=False)
+
     if _is_vector(array):
         if len(array) != len(mean):
             raise ValueError(f"Expected last dimension {len(mean)}, got {len(array)}")

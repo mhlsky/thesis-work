@@ -22,6 +22,13 @@
 4. 当前“主误差最优”与“物理指标最优”还不是同一个配置；
 5. 因此，实验4应该先把 **Phys** 和 **VMD** 各自收敛，再尝试小规模联合，而不是直接重新堆最终模型。
 
+> 说明（2026-05-30 起脚本默认策略）：
+>
+> - `bash scripts/run_result4_experiments.sh . result4` 默认执行 **`RUN_GROUP=next_round`**；
+> - 默认不会把 `robust` 多 seed 组一起带上；
+> - VMD / Joint 类重模型默认采用 `batch_size=768`；
+> - 若检测到 `results/result4_single_gpu/outputs/cache/vmd/K3_alpha2000/` 存在且完整，脚本会默认复用该 cache 并跳过重建。
+
 ---
 
 ## 2. 实验4要回答的核心问题
@@ -64,7 +71,7 @@
 
 ## 4. 实验分组总览
 
-实验4分成 5 组：
+从“实验内容”看，实验4分成 5 组：
 
 1. 基线组
 2. Phys 系统扫描组
@@ -77,6 +84,13 @@
 - `configs/ablation_result4.yaml` 当前默认覆盖 **单 seed 主实验**；
 - 多 seed `robust` 组会由脚本生成带 `seed` 后缀的运行时配置，但**不会自动进入默认主表汇总**；
 - 这样做是为了避免把主表和 seed 扫描表混在一起。
+
+从“脚本运行入口”看，当前更推荐把它拆成 4 层：
+
+1. `next_round`：下一轮窄实验（默认）
+2. `main_lite`：上一轮精简单 seed 主实验
+3. `diag`：诊断组
+4. `robust`：多 seed 稳健性复验
 
 ---
 
@@ -195,15 +209,14 @@
 
 ## 9. 多随机种子稳健性组
 
-### 9.1 默认 seed
+### 9.1 论文目标与脚本默认值
 
-默认建议：
+- 论文正式结论仍建议尽量做到 **5 seeds**；
+- 但为了控制实验时长，脚本当前默认的 `robust` 只先跑 **3 seeds**：
 
 - `7`
 - `42`
 - `2026`
-- `3407`
-- `10007`
 
 ### 9.2 默认候选
 
@@ -211,10 +224,8 @@
 
 1. `e4_ccg_xlstm_base`
 2. `e4_ccg_phys_s0010_r0050`
-3. `e4_ccg_phys_s0010_r0000`
-4. `e4_vmd_ccg_l005_lr5e4_mix`
-5. `e4_vmd_ccg_l005_lr5e4_nomix`
-6. `e4_joint_l005_lr5e4_nomix_r0050`
+3. `e4_vmd_ccg_l005_lr5e4_nomix`
+4. `e4_joint_l005_lr5e4_nomix_r0050`
 
 如果后续你确认了新的 winner，可以通过环境变量覆盖：
 
@@ -233,23 +244,21 @@ bash scripts/run_result4_experiments.sh . result4
 
 ## 10. 推荐执行顺序
 
-### 第一阶段：单 seed 宽扫
+### 第一阶段：下一轮窄实验
 
 建议顺序：
 
-1. `baseline`
-2. `phys_main`
-3. `phys_diag`
-4. `vmd_main`
-5. `vmd_diag`
-6. `joint`
+1. `next_round`
+2. 查看 VMD / Joint / Phys 少量验证结果
+3. 如有必要，再补跑 `diag`
 
 ### 第二阶段：筛选 winner
 
 建议保留：
 
-- Phys：保留 2 个 OOD 候选 + 1 个 physics-metric 候选
+- Phys：保留 2 个 physics 候选 + 1 个 `smooth(p,phi)` 诊断候选
 - VMD：保留 2 个 OOD 候选 + 1 个 routine / 结构候选
+- Joint：只验证 `lr=3e-4, no mixer` 主干上的 3 个候选
 
 ### 第三阶段：多 seed
 
@@ -259,7 +268,7 @@ bash scripts/run_result4_experiments.sh . result4
 
 ## 11. 运行方式
 
-### 11.1 完整全量实验（单 seed 主实验 + robust 多 seed）
+### 11.1 默认推荐入口（下一轮窄实验）
 
 ```bash
 bash scripts/run_result4_experiments.sh . result4
@@ -268,47 +277,78 @@ bash scripts/run_result4_experiments.sh . result4
 说明：
 
 - 这是当前默认推荐入口；
-- 会先跑单 seed 主实验，再继续跑 `robust` 多 seed 组；
-- 主表汇总仍然只针对单 seed 主实验，multi-seed run 不会自动混入 `ablation_result4.yaml` 主表。
+- 实际等价于 `RUN_GROUP=next_round`；
+- 默认不会一起跑 `robust`；
+- 如果检测到已有 `results/result4_single_gpu/outputs/cache/vmd/K3_alpha2000/`，会自动复用并跳过 VMD cache 重建。
 
-### 11.2 只跑单 seed 主实验
+### 11.2 下一轮窄实验（显式写法）
+
+```bash
+RUN_GROUP=next_round bash scripts/run_result4_experiments.sh . result4
+```
+
+### 11.3 上一轮精简主实验（回放）
+
+```bash
+RUN_GROUP=main_lite bash scripts/run_result4_experiments.sh . result4
+```
+
+### 11.4 跑诊断组
+
+```bash
+RUN_GROUP=diag bash scripts/run_result4_experiments.sh . result4
+```
+
+### 11.5 单 seed 全量主实验
 
 ```bash
 RUN_GROUP=all bash scripts/run_result4_experiments.sh . result4
 ```
 
-### 11.3 只跑 Phys 相关
+### 11.6 只跑 Phys 相关
 
 ```bash
 RUN_GROUP=phys bash scripts/run_result4_experiments.sh . result4
 ```
 
-### 11.4 只跑 VMD 相关
+### 11.7 只跑 VMD 相关
 
 ```bash
 RUN_GROUP=vmd bash scripts/run_result4_experiments.sh . result4
 ```
 
-### 11.5 只跑联合组
+### 11.8 只跑联合组
 
 ```bash
 RUN_GROUP=joint bash scripts/run_result4_experiments.sh . result4
 ```
 
-### 11.6 只跑多 seed 组
+### 11.9 只跑多 seed 组
 
 ```bash
 RUN_GROUP=robust bash scripts/run_result4_experiments.sh . result4
 ```
 
-### 11.7 只跑少数几个配置
+### 11.10 完整全量实验（单 seed 全量 + 当前默认 robust）
+
+```bash
+RUN_GROUP=full bash scripts/run_result4_experiments.sh . result4
+```
+
+说明：
+
+- `full` 仍然存在，但不再是默认入口；
+- 当前 `full = all + 精简后的 robust`；
+- 如果你想恢复更大的多 seed 集合，需要额外覆盖 `ROBUST_BASES` / `ROBUST_SEEDS`。
+
+### 11.11 只跑少数几个配置
 
 ```bash
 RUN_ONLY=e4_ccg_xlstm_base,e4_vmd_ccg_l005_lr5e4_nomix,e4_joint_l005_lr5e4_nomix_r0050 \
 bash scripts/run_result4_experiments.sh . result4
 ```
 
-### 11.8 自定义 seed
+### 11.12 自定义 seed
 
 ```bash
 RUN_GROUP=robust ROBUST_SEEDS=11,42,1234 bash scripts/run_result4_experiments.sh . result4

@@ -75,6 +75,9 @@ bash scripts/run_result4_experiments.sh . result4
 说明：
 
 - `run_result3_experiments.sh` 与 `run_result4_experiments.sh` 现在支持按多张 GPU **并发分发独立实验**。
+- `run_result4_experiments.sh` 现在默认执行 **`next_round` 下一轮窄实验**；`main_lite` 仍保留用于回放上一轮精简单 seed 主实验，不会默认把 `robust` 多 seed 组一起跑完。
+- 对 `result4` 中的 VMD / Joint 重模型，脚本会默认使用更适合当前服务器的 `batch_size=768`；如需覆盖，仍可设置 `SHIP_MOTION_BATCH_SIZE`。
+- 如果检测到 `results/result4_single_gpu/outputs/cache/vmd/K3_alpha2000/` 已存在且完整，`run_result4_experiments.sh` 会默认**复用这份 VMD cache**并跳过重建。
 - 默认会使用 `TRAIN_GPU_IDS=0,1`；如需覆盖，可在运行前设置：
 
 ```bash

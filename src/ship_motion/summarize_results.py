@@ -74,6 +74,8 @@ def summarize_results(
                         "split": split_name,
                         "smoothness": float(metrics.get("smoothness", 0.0)),
                         "roll_consistency_rmse": float(metrics.get("roll_consistency_rmse", 0.0)),
+                        "first_step_jump_rmse": float(metrics.get("first_step_jump_rmse", 0.0)),
+                        "max_abs_second_diff_p95": float(metrics.get("max_abs_second_diff_p95", 0.0)),
                     }
                 )
 
@@ -128,7 +130,16 @@ def summarize_results(
     write_csv(
         physics_path,
         physics_rows,
-        ["order", "model", "run_name", "split", "smoothness", "roll_consistency_rmse"],
+        [
+            "order",
+            "model",
+            "run_name",
+            "split",
+            "smoothness",
+            "roll_consistency_rmse",
+            "first_step_jump_rmse",
+            "max_abs_second_diff_p95",
+        ],
     )
     if skipped_runs:
         print(

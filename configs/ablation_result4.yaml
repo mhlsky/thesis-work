@@ -81,6 +81,11 @@ runs:
     display_name: CCG-Phys (0.0010/0.0050, warmup=12)
     category: phys_diag
 
+  - order: 34
+    run_name: e4_ccg_phys_s0010_r0075_prphi
+    display_name: CCG-Phys (0.0010/0.0075, smooth on p/phi)
+    category: phys_diag
+
   - order: 40
     run_name: e4_vmd_ccg_l005_lr1e3_mix
     display_name: VMD-CCG (l=0.05, lr=1e-3, mixer)
@@ -186,3 +191,17 @@ runs:
     display_name: Joint (l=0.05, lr=5e-4, no mixer, s=0.0010, r=0.0075)
     category: joint
 
+  - order: 76
+    run_name: e4_joint_l005_lr3e4_nomix_r0025
+    display_name: Joint (l=0.05, lr=3e-4, no mixer, roll=0.0025)
+    category: joint
+
+  - order: 77
+    run_name: e4_joint_l005_lr3e4_nomix_r0050
+    display_name: Joint (l=0.05, lr=3e-4, no mixer, roll=0.0050)
+    category: joint
+
+  - order: 78
+    run_name: e4_joint_l005_lr3e4_nomix_s0010_r0050
+    display_name: Joint (l=0.05, lr=3e-4, no mixer, s=0.0010, r=0.0050)
+    category: joint

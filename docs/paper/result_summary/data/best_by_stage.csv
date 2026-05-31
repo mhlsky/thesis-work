@@ -1,0 +1,6 @@
+stage,baseline_label,baseline_ood_rmse,winner_label,winner_family,winner_run_name,winner_ood_rmse,relative_improvement_pct,note
+result_1,LSTM,0.206997713236,CCG-xLSTM Baseline,baseline,ccg_xlstm_seq128_pred10,0.182219022307,11.9705143313,实验一中的最佳主干
+result_2_followup,Persistence,0.256498884197,VMD-CCG-Phys-xLSTM Follow-up,joint,vmd_ccg_phys_xlstm_seq128_pred10,0.195850628876,23.6446468417,与 result_1 相比，VMD 流程更稳定但仍非最终结论
+result3,CCG Baseline,0.182219022307,CCG-Phys (best OOD),phys,e3_ccg_phys_s001_r005,0.180006452466,1.21423647963,Phys 在 result3 中的最佳 OOD 候选
+result4_main,CCG Baseline,0.185609960396,"VMD-CCG (l=0.05, lr=3e-4, no mixer)",vmd,e4_vmd_ccg_l005_lr3e4_nomix,0.180483312263,2.76205442962,
+result4_next_round,CCG Baseline,0.184785261639,"Joint (l=0.05, lr=3e-4, r=0.005)",joint,e4_joint_l005_lr3e4_nomix_r0050,0.180340604198,2.40530949344,
