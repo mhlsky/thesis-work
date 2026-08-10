@@ -70,12 +70,15 @@ pwsh -File .\scripts\run_followup_experiments.ps1 -ResultName result_2_followup
 bash scripts/run_followup_experiments.sh . result_2_followup
 bash scripts/run_result3_experiments.sh . result3
 bash scripts/run_result4_experiments.sh . result4
+bash scripts/run_result5_performance.sh . result5_performance
+bash scripts/smoke_result5_performance.sh
 ```
 
 说明：
 
 - `run_result3_experiments.sh` 与 `run_result4_experiments.sh` 现在支持按多张 GPU **并发分发独立实验**。
 - `run_result4_experiments.sh` 现在默认执行 **`next_round` 下一轮窄实验**；`main_lite` 仍保留用于回放上一轮精简单 seed 主实验，不会默认把 `robust` 多 seed 组一起跑完。
+- `run_result5_performance.sh` 只加载既有 checkpoint 测量模型复杂度与 batch=1 推理延迟，不训练，也不重新计算 OOD RMSE。
 - 对 `result4` 中的 VMD / Joint 重模型，脚本会默认使用更适合当前服务器的 `batch_size=768`；如需覆盖，仍可设置 `SHIP_MOTION_BATCH_SIZE`。
 - 如果检测到 `results/result4_single_gpu/outputs/cache/vmd/K3_alpha2000/` 已存在且完整，`run_result4_experiments.sh` 会默认**复用这份 VMD cache**并跳过重建。
 - 默认会使用 `TRAIN_GPU_IDS=0,1`；如需覆盖，可在运行前设置：
@@ -133,6 +136,7 @@ export SHIP_MOTION_PRECISION=fp32
 - 实验手册：`docs/experiment_manual.md`
 - 实验3手册：`docs/experiment3_manual.md`
 - 实验4手册：`docs/experiment4_manual.md`
+- 实验5性能手册：`docs/experiment5_performance_manual.md`
 - 云上 tmux 手册：`docs/tmux_cloud_manual.md`
 - 分步实现：`docs/implementation_steps/README.md`
 - Step 02 说明：`docs/implementation_steps/02_training_lstm.md`

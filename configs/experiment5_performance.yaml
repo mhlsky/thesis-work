@@ -1,0 +1,108 @@
+# 实验5：模型复杂度与单样本推理性能测试。
+#
+# 设计原则：
+# 1. 只加载既有 config.yaml / best.pt，不训练，也不重新计算 OOD 指标；
+# 2. 所有模型使用 batch=1、seq_len=128 的相同输入形状，模拟仿真系统逐步调用；
+# 3. 公开架构基线沿用 result_1 的既有 checkpoint；
+# 4. CCG 与最终 Joint 使用 result4 robust 的 seed=42 checkpoint，便于与既有单 seed 基线对照；
+# 5. 5-seed 的最终 OOD 统计仍引用 docs/paper/result_summary/ 中的已有汇总，不在本实验重复测量。
+
+benchmark:
+  # 正式脚本会覆盖此目录，把输出放入 results/<result_name>/outputs/performance/。
+  output_dir: results/result5_performance/outputs/performance
+
+  # 每次前向只输入一个滑动窗口，输出 10 步、5 个状态量预测。
+  batch_size: 1
+  input_seed: 2026
+
+  # 先预热，再记录足量前向调用。GPU 会在每次计时前后同步，得到真实单请求延迟。
+  warmup_runs: 100
+  measure_runs: 1000
+
+  # CPU 与 GPU 分开记录，论文主表应选择实际仿真部署设备对应的一组数据。
+  profiles:
+    - name: cpu_fp32
+      device: cpu
+      precision: fp32
+      # 单线程更接近仿真进程内逐步调用模型的场景，并避免线程数成为模型间的混杂因素。
+      cpu_threads: 1
+    - name: cuda_fp32
+      device: cuda
+      precision: fp32
+      cpu_threads: null
+
+  # smoke 只验证 checkpoint 加载、前向计时和 CSV/JSON 输出，不代表正式性能数据。
+  smoke:
+    profiles: [cpu_fp32]
+    model_ids: [lstm, joint_final]
+    warmup_runs: 3
+    measure_runs: 10
+
+# 当前正式对比集合：公开架构基线 + 本文 CCG 主干 + 最终 Joint 模型。
+# metrics_path 只读取既有 OOD RMSE 作为表格参考，不触发任何数据集评估。
+models:
+  - id: lstm
+    label: LSTM
+    family: public_rnn
+    source_result: result_1
+    run_name: lstm_seq128_pred10
+    seed: 42
+    config_path: results/result_1/outputs/lstm_seq128_pred10/config.yaml
+    checkpoint_path: results/result_1/outputs/lstm_seq128_pred10/best.pt
+    metrics_path: results/result_1/outputs/lstm_seq128_pred10/metrics_ood_test.json
+    ood_reference_protocol: existing single-seed result
+
+  - id: gru
+    label: GRU
+    family: public_rnn
+    source_result: result_1
+    run_name: gru_seq128_pred10
+    seed: 42
+    config_path: results/result_1/outputs/gru_seq128_pred10/config.yaml
+    checkpoint_path: results/result_1/outputs/gru_seq128_pred10/best.pt
+    metrics_path: results/result_1/outputs/gru_seq128_pred10/metrics_ood_test.json
+    ood_reference_protocol: existing single-seed result
+
+  - id: transformer
+    label: Transformer Encoder
+    family: public_attention
+    source_result: result_1
+    run_name: transformer_seq128_pred10
+    seed: 42
+    config_path: results/result_1/outputs/transformer_seq128_pred10/config.yaml
+    checkpoint_path: results/result_1/outputs/transformer_seq128_pred10/best.pt
+    metrics_path: results/result_1/outputs/transformer_seq128_pred10/metrics_ood_test.json
+    ood_reference_protocol: existing single-seed result
+
+  - id: lite_xlstm
+    label: Lite-xLSTM
+    family: public_xlstm_backbone
+    source_result: result_1
+    run_name: lite_xlstm_seq128_pred10
+    seed: 42
+    config_path: results/result_1/outputs/lite_xlstm_seq128_pred10/config.yaml
+    checkpoint_path: results/result_1/outputs/lite_xlstm_seq128_pred10/best.pt
+    metrics_path: results/result_1/outputs/lite_xlstm_seq128_pred10/metrics_ood_test.json
+    ood_reference_protocol: existing single-seed result
+
+  - id: ccg_baseline
+    label: CCG-xLSTM Baseline
+    family: proposed_backbone
+    source_result: result4_robust
+    run_name: e4_ccg_xlstm_base_seed42
+    seed: 42
+    config_path: results/result4_robust/outputs/e4_ccg_xlstm_base_seed42/config.yaml
+    checkpoint_path: results/result4_robust/outputs/e4_ccg_xlstm_base_seed42/best.pt
+    metrics_path: results/result4_robust/outputs/e4_ccg_xlstm_base_seed42/metrics_ood_test.json
+    ood_reference_protocol: existing seed=42 robust member
+
+  - id: joint_final
+    label: Joint Final (VMD + CCG + Physics)
+    family: proposed_final
+    source_result: result4_robust
+    run_name: e4_joint_l005_lr3e4_nomix_r0050_seed42
+    seed: 42
+    config_path: results/result4_robust/outputs/e4_joint_l005_lr3e4_nomix_r0050_seed42/config.yaml
+    checkpoint_path: results/result4_robust/outputs/e4_joint_l005_lr3e4_nomix_r0050_seed42/best.pt
+    metrics_path: results/result4_robust/outputs/e4_joint_l005_lr3e4_nomix_r0050_seed42/metrics_ood_test.json
+    ood_reference_protocol: existing seed=42 robust member; 5-seed result is reported separately
